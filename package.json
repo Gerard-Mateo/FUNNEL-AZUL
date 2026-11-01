@@ -1,0 +1,13 @@
+{
+  "name": "funnel-azul",
+  "version": "1.0.0",
+  "description": "WhatsApp sales funnel for the Cuaderno Azul (Meta Click-to-WhatsApp ads -> bot -> DeUna/transfer -> LAAR or store pickup)",
+  "type": "module",
+  "private": true,
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env src/server.js",
+    "test": "node --test",
+    "simulate": "node scripts/simulate.js"
+  }
+}
