@@ -7,11 +7,11 @@ Objetivo: que el cliente llegue **lo más rápido posible** a sus datos y al pag
 | Paso | El cliente ve | Toques |
 |---|---|---|
 | 1 | Foto + precio + "envío o retiro gratis" | **[¡Lo quiero!]** |
-| 2 | **El upsell**: Solo este / ⭐ Club / 💎 Anual | 1 toque |
+| 2 | **El upsell**: Comprar / ⭐ Club / 💎 Anual | 1 toque |
 | 3 | "Ciudad y dirección en un mensaje" (o **[Retiro]**) | escribe 1 mensaje |
 | 4 | "¿A nombre de *María Pérez*?" (nombre de su WhatsApp) | **[✅ Sí]** |
-| 5 | Cédula (solo envío) | escribe 1 mensaje |
-| 6 | Resumen | **[✅ Confirmar y pagar]** |
+| 5 | Cédula (solo envío; se puede apagar con `ASK_CEDULA=false`) | escribe 1 mensaje |
+| 6 | Resumen (con **➕ Agregar otro** para llevar varios) | **[✅ Confirmar y pagar]** |
 | 7 | QR de DeUna directo | manda la captura |
 
 **Antes:** 10 pasos y 2 momentos de upsell. **Ahora:** 7 pasos para un cliente nuevo y **5 para uno que vuelve**: el bot recuerda su nombre, cédula y dirección y solo pregunta "¿a la misma dirección?".
@@ -24,11 +24,11 @@ Cuando alguien ya dijo que sí a algo pequeño, tiende a seguir diciendo que sí
 
 ### 2. Tres opciones, la que quieres vender en el medio
 Con 3 opciones la gente evita los extremos y elige la del medio: es el *efecto compromiso* (Simonson 1989; Simonson & Tversky 1992). Una opción más cara también sirve de *ancla* y hace ver razonable la del medio (Huber, Payne & Puto 1982; el famoso caso de suscripción de *The Economist* que cuenta Ariely).
-**Aplicado:** `Solo este · $15` / `⭐ Club · $12 c/u` / `💎 Anual · $60`. El Club, tu objetivo, va en el medio y con ⭐. El Anual es el ancla y además la mejor oferta real.
+**Aplicado:** `Comprar · $15 c/u` / `⭐ Club · $12 c/u` / `💎 Anual · $60`. El Club, tu objetivo, va en el medio y con ⭐. El Anual es el ancla y además la mejor oferta real.
 
 ### 3. Pocas opciones y fáciles de comparar
 El famoso estudio de las mermeladas (Iyengar & Lepper 2000) dice que muchas opciones paralizan. Los meta-análisis muestran que eso **no siempre** pasa (Scheibehenne et al. 2010). Sí pasa cuando las opciones son **difíciles de comparar** (Chernev et al. 2015).
-**Aplicado:** 3 botones, con el mismo formato y el precio en cada botón, para comparar de un vistazo. Quité el "pack de 3", la lista de cantidades y la segunda pregunta de upsell. "¿Quieres varios?" quedó en una línea chiquita: escribes el número y listo.
+**Aplicado:** 3 botones, con el mismo formato y el precio en cada botón, para comparar de un vistazo. Quité el "pack de 3", la lista de cantidades y la segunda pregunta de upsell. Para llevar varios no hay pregunta extra: en el resumen hay un **➕ Agregar otro**, como el "+" de un carrito.
 
 ### 4. "GRATIS" pesa más que su valor en dinero
 El *efecto precio cero* (Shampanier, Mazar & Ariely 2007): un descuento a $0 se siente desproporcionadamente mejor. En el caso del envío, la gente prefirió envío gratis a un descuento mayor en el producto.

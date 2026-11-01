@@ -74,12 +74,13 @@ test('offer: just "yes" or a question, no subscription talk yet', () => {
   assert.equal(c.session.adId, 'AD123');
 });
 
-test('the upsell comes right after yes: single, club (middle), annual', () => {
+test('the upsell comes right after yes: one-time purchase, club (middle), annual', () => {
   const c = chat(memoryStore());
   c.send('hola');
   const [{ msg }] = c.send({ buttonId: 'yes' });
   assert.deepEqual(msg.buttons.map((b) => b.id), ['plan_single', 'plan_club', 'plan_annual']);
-  assert.match(msg.text, /Solo este\*: \$15 \(\+ \$4\.50 de envío\)/);
+  assert.match(msg.text, /Compra única\*: \$15 c\/u \(\+ \$4\.50 de envío, gratis desde 3\)/);
+  assert.equal(msg.buttons[0].title, 'Comprar · $15 c/u');
   assert.match(msg.text, /Club Azul\*: uno nuevo cada 2 meses a \*\$12\*, envío GRATIS/);
   assert.match(msg.text, /Ahorras \$7\.50 en cada envío/);
   assert.match(msg.text, /6 cuadernos por \*\$60\* \(\$10 c\/u\)/);
@@ -102,7 +103,7 @@ test('fastest path, new customer: single + delivery in 7 steps, profile name is 
   assert.match(summary[0].msg.text, /Envío LAAR — \$4\.50/);
   assert.match(summary[0].msg.text, /Total: \$19\.50/);
   assert.match(summary[0].msg.text, /María Pérez · 1712345678/);
-  assert.deepEqual(summary[0].msg.buttons.map((b) => b.id), ['confirm', 'edit']);
+  assert.deepEqual(summary[0].msg.buttons.map((b) => b.id), ['confirm', 'add_one', 'edit']);
 
   const pay = c.send({ buttonId: 'confirm' }); // 7 pay: QR right away
   assert.equal(pay[0].msg.headerImage, 'https://x/qr.png');
@@ -142,7 +143,7 @@ test('store pickup, typed answers, no profile name, an address mentioning "tiend
   const c = chat(memoryStore(), '593981234000', '✨ Mari ✨');
   c.send('hola');
   c.send('si');
-  c.send('solo este');
+  c.send('comprar');
   c.send('lo retiro');
   const ask = c.send('x'); // too short for a name
   assert.match(ask[0].msg.text, /nombre y apellido/);
@@ -156,6 +157,45 @@ test('store pickup, typed answers, no profile name, an address mentioning "tiend
   d.send('solo este');
   d.send('Guayaquil, Av. 9 de Octubre 100, junto a la tienda Tía');
   assert.equal(d.session.order.method, 'delivery');
+});
+
+test('several notebooks with the "+" in the summary, no subscription needed', () => {
+  const c = chat(memoryStore());
+  c.send('hola');
+  c.send({ buttonId: 'yes' });
+  c.send({ buttonId: 'plan_single' });
+  c.send(ADDRESS);
+  c.send({ buttonId: 'name_ok' });
+  assert.match(c.send('1712345678')[0].msg.text, /Total: \$19\.50/);
+  const two = c.send({ buttonId: 'add_one' });
+  assert.match(two[0].msg.text, /2 × Cuaderno Azul \(\$15\.00 c\/u\) — \$30\.00/);
+  assert.match(two[0].msg.text, /Total: \$34\.50/);
+  assert.match(two[0].msg.text, /escribe \*quitar\*/);
+  const three = c.send({ buttonId: 'add_one' });
+  assert.match(three[0].msg.text, /Envío LAAR — GRATIS/);
+  assert.match(three[0].msg.text, /Total: \$45\.00/);
+  c.send('quitar');
+  assert.equal(c.session.order.qty, 2);
+  c.send({ buttonId: 'confirm' });
+  assert.equal(c.session.order.total, 34.5);
+});
+
+test('ASK_CEDULA=false skips the cédula step', () => {
+  const store = memoryStore();
+  let session = newSession('593981119999');
+  const cfg = { ...config, askCedula: false };
+  const send = (incoming) => {
+    const r = handleCustomer(session, { profileName: 'María Pérez', ...incoming }, { config: cfg, store });
+    session = r.session;
+    return r.out;
+  };
+  send({ text: 'hola' });
+  send({ buttonId: 'yes' });
+  send({ buttonId: 'plan_single' });
+  send({ text: ADDRESS });
+  const summary = send({ buttonId: 'name_ok' });
+  assert.equal(session.state, S.SUMMARY);
+  assert.match(summary[0].msg.text, /Tu pedido/);
 });
 
 test('several notebooks by typing a number; wholesale goes to a person', () => {

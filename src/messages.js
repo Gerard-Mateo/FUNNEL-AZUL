@@ -36,7 +36,7 @@ export const productOffer = (cfg) =>
   );
 
 // ---------- 2. The upsell: right after "yes", one message, 3 options ----------
-// Single (what they asked for) · Club (target, in the middle) · Annual (anchor, biggest saving)
+// One-time purchase (any quantity) · Club (target, in the middle) · Annual (anchor, biggest saving)
 
 export const planOffer = (cfg, retry = false) => {
   const months = cfg.subscription.defaultMonths;
@@ -45,13 +45,14 @@ export const planOffer = (cfg, retry = false) => {
   const lines = [
     retry ? 'Toca una opción 👇' : '¡Buenísimo! 🙌 Antes de tus datos, mira esto 👀',
     '',
-    `🔹 *Solo este*: ${$short(cfg.product.price)} (+ ${$(cfg.shippingCost)} de envío)`,
+    `🛍️ *Compra única*: ${$short(cfg.product.price)} c/u (+ ${$(cfg.shippingCost)} de envío` +
+      (cfg.freeShippingFrom ? `, gratis desde ${cfg.freeShippingFrom})` : ')'),
     '',
     `⭐ *Club Azul*: uno nuevo ${freqLabel(months)} a *${$short(club.unit)}*, envío GRATIS.`,
     `Ahorras ${$short(club.savings)} en cada envío y cancelas cuando quieras.`,
   ];
   const opts = [
-    ['plan_single', `Solo este · ${$short(cfg.product.price)}`],
+    ['plan_single', `Comprar · ${$short(cfg.product.price)} c/u`],
     ['plan_club', `⭐ Club · ${$short(club.unit)} c/u`],
   ];
   if (annual) {
@@ -62,7 +63,6 @@ export const planOffer = (cfg, retry = false) => {
     );
     opts.push(['plan_annual', `💎 Anual · ${$short(annual.total)}`]);
   }
-  lines.push('', '_¿Quieres varios? Escribe cuántos._');
   return buttons(lines.join('\n'), opts);
 };
 
@@ -149,14 +149,18 @@ export const summary = (order, cfg) => {
     );
     if (q.savings > 0) lines.push(`🎉 Ahorras ${$(q.savings)}`);
     lines.push(
-      order.method === 'pickup' ? '🏬 Retiro en tienda — GRATIS' : `🚚 Envío LAAR — ${q.shipping ? $(q.shipping) : 'GRATIS'}`,
+      order.method === 'pickup' ? '🏬 Retiro en tienda — GRATIS' : `🚚 Envío LAAR — ${q.shipping ? $(q.shipping) : 'GRATIS 🎉'}`,
       `*Total: ${$(q.total)}*`
     );
+    if (order.qty > 1) lines.push('_(Para quitar uno, escribe *quitar*)_');
   }
   lines.push('', ...customerLines(order, cfg));
   return buttons(lines.join('\n'), [
     ['confirm', '✅ Confirmar y pagar'],
-    ...(isSub ? [['toggle_freq', order.months === 1 ? '📅 Cada 2 meses' : '📅 Mejor cada mes']] : []),
+    // Subscriptions: switch frequency here. One-time: a cart "+" to take several (no extra question).
+    isSub
+      ? ['toggle_freq', order.months === 1 ? '📅 Cada 2 meses' : '📅 Mejor cada mes']
+      : ['add_one', '➕ Agregar otro'],
     ['edit', '✏️ Corregir'],
   ]);
 };

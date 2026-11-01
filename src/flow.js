@@ -1,11 +1,11 @@
 // The sales conversation, as a state machine. Designed for the fewest taps (docs/09-estrategia.md):
 //
 //   1. OFFER    photo + price                  [¡Lo quiero!] [Pregunta]
-//   2. PLAN     the only upsell, right after yes [Solo este] [⭐ Club] [💎 Anual]   (or type a number)
+//   2. PLAN     the only upsell, right after yes [Comprar] [⭐ Club] [💎 Anual]   (or type a number)
 //   3. ADDRESS  "ciudad y dirección" in one message, or [🏬 Retiro]  (returning customer: [✅ Misma])
 //   4. NAME     one tap if the WhatsApp profile name looks real       (returning customer: skipped)
 //   5. CEDULA   only for delivery                                      (returning customer: skipped)
-//   6. SUMMARY  [✅ Confirmar y pagar] [📅 frecuencia] [✏️ Corregir]
+//   6. SUMMARY  [✅ Confirmar y pagar] [➕ Agregar otro | 📅 frecuencia] [✏️ Corregir]
 //   7. PAY      DeUna QR straight away, [🏦 Transferencia] one tap away -> receipt photo
 //   8. VERIFYING until you reply "pagado AZ123"
 //
@@ -123,7 +123,7 @@ export function handleCustomer(session, incoming, { config: cfg, store, now = Da
     go(S.ADDRESS);
   };
   const askForCedulaOrSummary = () => {
-    if (order().method === 'delivery' && !order().cedula) {
+    if (order().method === 'delivery' && cfg.askCedula !== false && !order().cedula) {
       reply(M.askCedula());
       go(S.CEDULA);
     } else {
@@ -226,7 +226,7 @@ export function handleCustomer(session, incoming, { config: cfg, store, now = Da
       const c = pick(incoming, {
         plan_annual: /(anual|ano|año)/,
         plan_club: /(club|suscri|mensual)/,
-        plan_single: /^(solo|uno|este|1 cuaderno)/,
+        plan_single: /^(comprar|compra|solo|uno|este|1 cuaderno)/,
       });
       const typedQty = Number.parseInt(text.match(/\d+/)?.[0] ?? '', 10);
       if (c === 'plan_annual' && cfg.subscription.annualPrice > 0) {
@@ -303,11 +303,23 @@ export function handleCustomer(session, incoming, { config: cfg, store, now = Da
     case S.SUMMARY: {
       const c = pick(incoming, {
         toggle_freq: /(cada mes|cada 2 meses|cada dos meses|mensual|bimestral)/,
+        add_one: /^(agregar|otro|uno mas|mas|\+)/,
+        remove_one: /^(quitar|uno menos|menos|-)/,
         confirm: YES,
         edit: /(corregir|cambiar|editar|no)/,
       });
       if (c === 'toggle_freq' && isSub()) {
         order().months = order().months === 1 ? 2 : 1;
+        reply(M.summary(order(), cfg));
+      } else if (c === 'add_one' && !isSub()) {
+        if (order().qty >= cfg.maxQty) {
+          toHuman(M.wholesale(order().qty + 1), M.ownerWholesaleAlert(session, order().qty + 1));
+          break;
+        }
+        order().qty += 1;
+        reply(M.summary(order(), cfg));
+      } else if (c === 'remove_one' && !isSub() && order().qty > 1) {
+        order().qty -= 1;
         reply(M.summary(order(), cfg));
       } else if (c === 'confirm') {
         const base = {

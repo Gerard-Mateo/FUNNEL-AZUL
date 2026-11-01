@@ -384,6 +384,7 @@ function updateHints() {
     if (session.state === 'ADDRESS') say('Usar dirección de ejemplo', 'Quito, Av. Amazonas N34 y Rusia, casa azul frente al parque');
     if (session.state === 'NAME') say('María Pérez');
     if (session.state === 'CEDULA') say('1712345678');
+    if (session.state === 'SUMMARY' && session.order.qty > 1 && session.order.kind !== 'subscription') say('quitar');
     if (session.state !== 'HUMAN' && session.state !== 'START') say('asesor');
     if (session.state === 'HUMAN') say('reiniciar');
   } else {

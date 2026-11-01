@@ -61,6 +61,8 @@ export const config = {
   },
 
   // --- Delivery (LAAR Courier) ---
+  // Ask the customer's cédula for delivery orders (LAAR guía / invoice). Set ASK_CEDULA=false if LAAR doesn't need it.
+  askCedula: env('ASK_CEDULA', 'true') !== 'false',
   shippingCost: money('SHIPPING_COST', '4.50'),
   deliveryDays: env('DELIVERY_DAYS', '1 a 3 días hábiles'),
 

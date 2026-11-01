@@ -8,11 +8,11 @@ Sales funnel for the **Cuaderno Azul**: Meta ad → WhatsApp → automatic chat 
  Instagram / Facebook ad          WhatsApp bot (this repo)                      You
  ───────────────────────          ─────────────────────────────────────────    ─────────────
  "Click to WhatsApp" ad   ──►  1. Photo + price                  [¡Lo quiero!]
- (pre-filled message:          2. THE UPSELL   [Solo este · $15] [⭐ Club · $12 c/u] [💎 Anual · $60]
+ (pre-filled message:          2. THE UPSELL   [Comprar · $15 c/u] [⭐ Club · $12 c/u] [💎 Anual · $60]
   "¡Hola! Quiero el            3. "Ciudad y dirección" in one message   or  [🏬 Retiro]
    cuaderno azul 💙")          4. "¿A nombre de María Pérez?" (from WhatsApp profile)  [✅ Sí]
                                5. Cédula (delivery only)
-                               6. Summary                         [✅ Confirmar y pagar]
+                               6. Summary         [✅ Confirmar y pagar] [➕ Agregar otro] [✏️ Corregir]
                                7. DeUna QR right away (transfer 1 tap away) → receipt ──►  📲 "pagado AZ123"
                                8. "¡Pago confirmado!" ◄──────────────────────────────────┘
                                9. LAAR tracking  ◄─────────────────────────────────────── "guia AZ123 <n°>"

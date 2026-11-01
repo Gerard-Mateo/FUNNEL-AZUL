@@ -5,7 +5,7 @@ El porqué de cada decisión está en [09-estrategia.md](09-estrategia.md).
 ```
 ¡Buenísimo! 🙌 Antes de tus datos, mira esto 👀
 
-🔹 Solo este: $15 (+ $4.50 de envío)
+🛍️ Compra única: $15 c/u (+ $4.50 de envío, gratis desde 3)
 
 ⭐ Club Azul: uno nuevo cada 2 meses a $12, envío GRATIS.
 Ahorras $7.50 en cada envío y cancelas cuando quieras.
@@ -13,13 +13,11 @@ Ahorras $7.50 en cada envío y cancelas cuando quieras.
 💎 Anual: 6 cuadernos por $60 ($10 c/u), un solo pago, envío GRATIS.
 Ahorras $57 en el año.
 
-¿Quieres varios? Escribe cuántos.
-
-[Solo este · $15]  [⭐ Club · $12 c/u]  [💎 Anual · $60]
+[Comprar · $15 c/u]  [⭐ Club · $12 c/u]  [💎 Anual · $60]
 ```
 
 - La frecuencia (cada mes o cada 2 meses) **no es una pregunta aparte**. Va por defecto y se cambia con un botón en el resumen (**📅 Mejor cada mes**).
-- Si escriben un número ("quiero 3") es compra normal de varios. Con 3 o más, el envío es gratis. **Más de 20** pasa a ti como mayorista.
+- **¿Varios sin suscripción?** Eligen *Comprar* y en el resumen tocan **➕ Agregar otro** las veces que quieran. El total se actualiza al instante y, al llegar a 3, el envío pasa a GRATIS solo. Para bajar, escriben *quitar*. También pueden escribir el número ("quiero 3") en el paso 2. **Más de 20** pasa a ti como mayorista.
 
 ## Configurar
 
