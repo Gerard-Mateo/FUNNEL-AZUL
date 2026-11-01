@@ -8,7 +8,8 @@ Sales funnel for the **Cuaderno Azul**: Meta ad → WhatsApp → automatic chat 
  Instagram / Facebook ad          WhatsApp bot (this repo)                      You
  ───────────────────────          ─────────────────────────────────────────    ─────────────
  "Click to WhatsApp" ad   ──►  1. Photo + price: "¿Lo quieres?"  [Sí] [Pregunta]
- (pre-filled message:          2. ¿Cuántos?                      [1] [2] [3]
+ (pre-filled message:          2. ¿Cuántos? (list 1–20, prices + savings)  ☰ Elegir cantidad
+    🔥 "¡Espera! Llévate uno más por solo $9" [Sí] [No]
   "¡Hola! Quiero el            3. ¿Envío o retiro?               [🚚 LAAR] [🏬 Tienda]
    cuaderno 💙")                  🚚 nombre → cédula → ciudad → dirección
                                   🏬 nombre (+ store address, map, hours, FREE)
@@ -34,6 +35,7 @@ At any moment the customer can type **asesor** to talk to you (the bot goes quie
 | 4 | Put the bot online (WhatsApp Cloud API + this code) | 2–3 hours | [docs/02-whatsapp-bot.md](docs/02-whatsapp-bot.md) |
 | 5 | Launch the **Click-to-WhatsApp** ads | 1 hour | [docs/03-meta-ads.md](docs/03-meta-ads.md) |
 | 6 | Daily routine: verify payments, ship, send tracking | 15 min/day | [docs/06-operacion.md](docs/06-operacion.md) |
+| ⭐ | Upselling: volume prices, "one more" offer, free shipping threshold | 10 min | [docs/07-upselling.md](docs/07-upselling.md) |
 
 > **Want to start selling this week, before the bot?** You can run steps 1–3 + 5 with the free
 > **WhatsApp Business app** and answer by hand using the same scripts (quick replies). See
@@ -68,7 +70,8 @@ Requires Node.js 18+ (no other dependencies).
 ## Project structure
 
 ```
-src/config.js      ← price, shipping cost, store address, bank data (all from .env)
+src/config.js      ← prices, shipping cost, store address, bank data (all from .env)
+src/pricing.js     ← volume prices, savings, free shipping, upsell math
 src/messages.js    ← every text the bot sends (edit the wording here)
 src/flow.js        ← the conversation steps + your admin commands
 src/whatsapp.js    ← talks to the WhatsApp Cloud API

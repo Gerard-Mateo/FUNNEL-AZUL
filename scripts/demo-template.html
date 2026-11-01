@@ -119,6 +119,14 @@ header :focus-visible { outline-color: var(--navy-ink); }
   box-shadow: 0 1px 0 color-mix(in srgb, var(--fg) 10%, transparent);
 }
 .btns button:disabled { opacity: 0.55; cursor: default; }
+.list-head {
+  display: flex; align-items: center; justify-content: center; gap: 6px; font-weight: 600; color: var(--btn-fg);
+  border-top: 1px solid var(--line); margin: 8px -10px -6px; padding: 9px 10px 7px; font-size: 14.5px;
+}
+.btns.rows button { text-align: left; display: flex; flex-direction: column; gap: 2px; padding: 9px 12px; }
+.btns.rows .r-title { color: var(--fg); font-weight: 600; }
+.btns.rows .r-desc { color: var(--muted); font-weight: 400; font-size: 13px; line-height: 1.3; }
+.btns.rows button.pick { box-shadow: 0 0 0 2px var(--btn-fg); }
 .typing { align-self: flex-start; background: var(--bubble-in); border-radius: 12px; padding: 10px 14px; display: flex; gap: 4px; }
 .typing span { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); animation: blink 1s infinite; }
 .typing span:nth-child(2) { animation-delay: .15s } .typing span:nth-child(3) { animation-delay: .3s }
@@ -202,6 +210,9 @@ const config = {
     price: 15,
     imageUrl: '__IMG__',
   },
+  pricing: parseTiers('1:15,2:13.5,3:12,5:11'),
+  freeShippingFrom: 3,
+  maxQty: 20,
   shippingCost: 4.5,
   deliveryDays: '1 a 3 días hábiles',
   store: { address: 'Av. Ejemplo N00-00 y Calle Ejemplo, Quito', mapsUrl: 'https://maps.google.com/?q=Quito', hours: 'Lunes a sábado, 10:00 a 19:00' },
@@ -233,22 +244,30 @@ const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>'
 const format = (s) =>
   esc(s)
     .replace(/\*([^*\n]+)\*/g, '<strong>$1</strong>')
+    .replace(/~([^~\n]+)~/g, '<s>$1</s>')
+    .replace(/(^|\s)_([^_\n]+)_(?=\s|$)/g, '$1<em>$2</em>')
     .replace(/(https?:\/\/[^\s<]+|wa\.me\/\d+)/g, (u) => `<a href="${u.startsWith('http') ? u : 'https://' + u}" target="_blank" rel="noopener">${u}</a>`);
 const now = () => new Date().toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit' });
 
 function scroll(el) { el.scrollTop = el.scrollHeight; }
 
-function addBubble(where, dir, html, buttons) {
+function addBubble(where, dir, html, buttons, listButton) {
   const wrap = document.createElement('div');
   wrap.className = `msg ${dir}`;
-  wrap.innerHTML = `<div class="bubble">${html}<span class="time">${now()}</span></div>`;
+  const head = listButton ? `<div class="list-head">☰ ${esc(listButton)}</div>` : '';
+  wrap.innerHTML = `<div class="bubble">${html}<span class="time">${now()}</span>${head}</div>`;
   if (buttons?.length) {
     const b = document.createElement('div');
-    b.className = 'btns';
+    b.className = listButton ? 'btns rows' : 'btns';
     for (const btn of buttons) {
       const el = document.createElement('button');
       el.type = 'button';
-      el.textContent = btn.title;
+      if (btn.description !== undefined) {
+        el.innerHTML = `<span class="r-title">${esc(btn.title)}</span><span class="r-desc">${esc(btn.description)}</span>`;
+        if (/Recomendado/.test(btn.description)) el.classList.add('pick');
+      } else {
+        el.textContent = btn.title;
+      }
       el.addEventListener('click', () => {
         b.querySelectorAll('button').forEach((x) => (x.disabled = true));
         customerSends({ buttonId: btn.id, text: btn.title }, btn.title);
@@ -266,6 +285,8 @@ function render(where, msg) {
     addBubble(where, 'in', `<div class="receipt">📷 comprobante</div>${format(msg.caption)}`);
   } else if (msg.type === 'image') {
     addBubble(where, 'in', `<img src="${esc(msg.link)}" alt="">${format(msg.caption || '')}`);
+  } else if (msg.type === 'list') {
+    addBubble(where, 'in', format(msg.text), msg.rows, msg.button);
   } else if (msg.type === 'buttons') {
     const img = msg.headerImage ? `<img src="${esc(msg.headerImage)}" alt="El Cuaderno Azul">` : '';
     addBubble(where, 'in', img + format(msg.text), msg.buttons);
@@ -347,6 +368,7 @@ function updateHints() {
   h.replaceChildren();
   if (view === 'customer') {
     if (session.state === 'RECEIPT') h.append(hint('📷 Enviar comprobante', sendPhoto));
+    if (session.state === 'QTY_CUSTOM') for (const n of ['7', '12', '50']) h.append(hint(n, () => customerSends({ text: n }, n)));
     if (session.state === 'D_NAME' || session.state === 'P_NAME') h.append(hint('María Pérez', () => customerSends({ text: 'María Pérez' }, 'María Pérez')));
     if (session.state === 'D_ID') h.append(hint('1712345678', () => customerSends({ text: '1712345678' }, '1712345678')));
     if (session.state === 'D_CITY') h.append(hint('Quito', () => customerSends({ text: 'Quito' }, 'Quito')));

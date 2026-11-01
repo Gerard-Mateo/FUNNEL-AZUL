@@ -49,6 +49,24 @@ export function createWhatsApp({ whatsappToken, phoneNumberId, graphVersion }) {
             },
           },
         };
+      case 'list':
+        return {
+          ...base,
+          type: 'interactive',
+          interactive: {
+            type: 'list',
+            body: { text: msg.text },
+            action: {
+              button: msg.button,
+              sections: [
+                {
+                  title: 'Opciones',
+                  rows: msg.rows.map((r) => ({ id: r.id, title: r.title, description: r.description })),
+                },
+              ],
+            },
+          },
+        };
       default:
         throw new Error(`Unknown message type ${msg.type}`);
     }

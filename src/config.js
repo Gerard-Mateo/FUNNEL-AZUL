@@ -1,6 +1,8 @@
 // All business settings live here. Change them via environment variables (.env)
 // so you never have to touch the code to update a price or an address.
 
+import { parseTiers } from './pricing.js';
+
 const env = (key, fallback = '') => process.env[key] ?? fallback;
 const money = (key, fallback) => Number.parseFloat(env(key, fallback));
 
@@ -29,12 +31,19 @@ export const config = {
       'PRODUCT_DESCRIPTION',
       'Tapa dura azul, minimalista y con cinta marcapáginas. Simple y hermoso 💙'
     ),
-    price: money('PRODUCT_PRICE', '15.00'),
     // Defaults to the photo in assets/ served by this same server.
     imageUrl:
       env('PRODUCT_IMAGE_URL') ||
       (env('PUBLIC_URL') ? `${env('PUBLIC_URL').replace(/\/$/, '')}/assets/cuaderno-azul.jpg` : ''),
   },
+
+  // --- Volume pricing (upselling) ---
+  // "min:unitPrice" pairs. Default: 1 = $15 · 2+ = $13.50 c/u · 3+ = $12 c/u · 5+ = $11 c/u
+  pricing: parseTiers(env('PRICE_TIERS', '1:15,2:13.5,3:12,5:11')),
+  // Free LAAR delivery from this many notebooks (0 = never free)
+  freeShippingFrom: Number.parseInt(env('FREE_SHIPPING_FROM', '3'), 10),
+  // Above this, the chat goes to a person for a wholesale price
+  maxQty: Number.parseInt(env('MAX_QTY', '20'), 10),
 
   // --- Delivery (LAAR Courier) ---
   shippingCost: money('SHIPPING_COST', '4.50'),
@@ -59,3 +68,6 @@ export const config = {
     email: env('BANK_ACCOUNT_EMAIL', ''),
   },
 };
+
+// Base price = price of 1 notebook (first tier)
+config.product.price = config.pricing[0].unit;

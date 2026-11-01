@@ -28,6 +28,11 @@ const show = (out) => {
       if (to === phone) lastButtons = msg.buttons;
       msg.buttons.forEach((b, i) => console.log(`   [${i + 1}] ${b.title}`));
     }
+    if (msg.type === 'list') {
+      if (to === phone) lastButtons = msg.rows;
+      console.log(`   ☰ ${msg.button}`);
+      msg.rows.forEach((r, i) => console.log(`   [${i + 1}] ${r.title}  —  ${r.description}`));
+    }
     console.log('');
   }
 };

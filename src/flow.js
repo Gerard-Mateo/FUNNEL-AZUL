@@ -1,6 +1,6 @@
 // The sales conversation, as a state machine.
 //
-//   ad click -> product + "¿lo quieres?" -> cantidad -> envío o retiro
+//   ad click -> product + "¿lo quieres?" -> cantidad -> [upsell: ¿llevas uno más?] -> envío o retiro
 //     envío  -> nombre -> cédula -> ciudad -> dirección -> resumen
 //     retiro -> nombre -> resumen (con dirección de la tienda)
 //   resumen -> método de pago (DeUna / transferencia) -> comprobante -> verificación
@@ -10,11 +10,14 @@
 // That keeps the logic easy to test (see test/flow.test.js).
 
 import * as M from './messages.js';
+import { quote, nextUpgrade, shippingGap } from './pricing.js';
 
 export const S = {
   START: 'START',
   CONFIRM_PRODUCT: 'CONFIRM_PRODUCT',
   QTY: 'QTY',
+  QTY_CUSTOM: 'QTY_CUSTOM',
+  UPSELL: 'UPSELL',
   METHOD: 'METHOD',
   D_NAME: 'D_NAME',
   D_ID: 'D_ID',
@@ -29,6 +32,12 @@ export const S = {
 };
 
 export const newSession = (phone) => ({ phone, state: S.START, order: {} });
+
+// Start over but keep who the customer is and which ad brought them.
+const resetSession = (session, phone = session.phone) => {
+  for (const key of Object.keys(session)) if (key !== 'adId') delete session[key];
+  Object.assign(session, newSession(phone));
+};
 
 const norm = (s = '') =>
   s
@@ -54,14 +63,8 @@ const NO = /^(no|nop|nel|todavia no|aun no)\b/;
 const WANTS_HUMAN = /\b(asesor|asesora|humano|persona|ayuda|hablar con alguien)\b/;
 const RESTART = /^(reiniciar|empezar|menu|inicio)$/;
 
-export const totals = (order, cfg) => {
-  const qty = order.qty ?? 1;
-  const subtotal = round(qty * cfg.product.price);
-  const shipping = order.method === 'delivery' ? cfg.shippingCost : 0;
-  return { qty, subtotal, shipping, total: round(subtotal + shipping) };
-};
+export const totals = (order, cfg) => quote(order.qty ?? 1, order.method, cfg);
 
-const round = (n) => Math.round(n * 100) / 100;
 
 const newOrderId = () =>
   'AZ' + Date.now().toString(36).slice(-4).toUpperCase() + Math.floor(Math.random() * 10);
@@ -84,7 +87,7 @@ export function handleCustomer(session, incoming, { config: cfg, store }) {
 
   // --- Global shortcuts that work at any step ---
   if (RESTART.test(norm(text))) {
-    Object.assign(session, newSession(session.phone));
+    resetSession(session);
   } else if (session.state === S.HUMAN) {
     return { session, out }; // a person is handling this chat; the bot stays quiet
   } else if (WANTS_HUMAN.test(norm(text))) {
@@ -104,7 +107,7 @@ export function handleCustomer(session, incoming, { config: cfg, store }) {
     case S.CONFIRM_PRODUCT: {
       const c = pick(incoming, { yes: YES, question: NO });
       if (c === 'yes') {
-        reply(M.askQty());
+        reply(M.askQty(cfg));
         go(S.QTY);
       } else if (c === 'question') {
         go(S.HUMAN);
@@ -116,17 +119,56 @@ export function handleCustomer(session, incoming, { config: cfg, store }) {
       break;
     }
 
-    case S.QTY: {
-      const fromButton = incoming.buttonId?.startsWith('qty_')
-        ? Number(incoming.buttonId.slice(4))
-        : null;
+    case S.QTY:
+    case S.QTY_CUSTOM: {
+      if (incoming.buttonId === 'qty_more') {
+        reply(M.askQtyNumber(cfg));
+        go(S.QTY_CUSTOM);
+        break;
+      }
+      const fromButton = /^qty_\d+$/.test(incoming.buttonId ?? '') ? Number(incoming.buttonId.slice(4)) : null;
       const qty = fromButton ?? Number.parseInt(text.match(/\d+/)?.[0] ?? '', 10);
-      if (qty >= 1 && qty <= 20) {
+      if (qty > cfg.maxQty) {
+        // Wholesale: a person negotiates the price
         session.order.qty = qty;
-        reply(M.askMethod(cfg));
+        go(S.HUMAN);
+        reply(M.wholesale(qty));
+        notifyOwner(M.ownerWholesaleAlert(session, qty));
+        break;
+      }
+      if (!(qty >= 1)) {
+        reply(session.state === S.QTY ? M.askQty(cfg, true) : M.askQtyNumber(cfg, true));
+        break;
+      }
+      session.order.qty = qty;
+      const up = session.upsellShown ? null : nextUpgrade(qty, cfg);
+      if (up) {
+        session.upsellShown = true;
+        session.upsell = up;
+        reply(M.upsellOffer(qty, up, cfg));
+        go(S.UPSELL);
+      } else {
+        reply(M.askMethod(cfg, qty));
+        go(S.METHOD);
+      }
+      break;
+    }
+
+    case S.UPSELL: {
+      const c = pick(incoming, {
+        up_yes: YES,
+        up_no: /^(no|solo|me quedo|asi esta bien|nada mas|mejor no)/,
+      });
+      if (c === 'up_yes') {
+        session.order.qty = session.upsell.qty;
+        session.order.upsold = true;
+        reply(M.askMethod(cfg, session.order.qty, M.upsellAcceptedIntro(session.order.qty)));
+        go(S.METHOD);
+      } else if (c === 'up_no') {
+        reply(M.askMethod(cfg, session.order.qty));
         go(S.METHOD);
       } else {
-        reply(M.askQty(true));
+        reply(M.upsellOffer(session.order.qty, session.upsell, cfg));
       }
       break;
     }
@@ -145,7 +187,7 @@ export function handleCustomer(session, incoming, { config: cfg, store }) {
         reply(M.askName());
         go(S.P_NAME);
       } else {
-        reply(M.askMethod(cfg));
+        reply(M.askMethod(cfg, session.order.qty));
       }
       break;
     }
@@ -202,8 +244,16 @@ export function handleCustomer(session, incoming, { config: cfg, store }) {
     }
 
     case S.SUMMARY: {
-      const c = pick(incoming, { confirm: YES, edit: /(corregir|cambiar|editar|no)/ });
-      if (c === 'confirm') {
+      const c = pick(incoming, {
+        confirm: YES,
+        add_more: /(agregar|anadir|sumar|llevar mas|mas cuadernos)/,
+        edit: /(corregir|cambiar|editar|no)/,
+      });
+      if (c === 'add_more' && shippingGap(session.order, cfg)) {
+        session.order.qty = cfg.freeShippingFrom;
+        session.order.upsold = true;
+        reply(M.summary(session.order, cfg, M.freeShippingUnlocked()));
+      } else if (c === 'confirm') {
         const t = totals(session.order, cfg);
         Object.assign(session.order, t, {
           id: session.order.id ?? newOrderId(),
@@ -216,8 +266,8 @@ export function handleCustomer(session, incoming, { config: cfg, store }) {
         reply(M.askPayment(session.order));
         go(S.PAYMENT);
       } else if (c === 'edit') {
-        session.order = { qty: session.order.qty };
-        reply(M.askMethod(cfg));
+        session.order = { qty: session.order.qty, upsold: session.order.upsold };
+        reply(M.askMethod(cfg, session.order.qty));
         go(S.METHOD);
       } else {
         reply(M.summary(session.order, cfg));
@@ -314,7 +364,7 @@ export function handleOwner(text, { config: cfg, store }) {
       out.push({ to: order.phone, msg: M.paymentConfirmed(order, cfg) });
       const session = store.getSession(order.phone);
       if (session) {
-        Object.assign(session, newSession(order.phone));
+        resetSession(session, order.phone);
         session.lastOrderId = order.id;
         store.saveSession(session);
       }
@@ -341,7 +391,7 @@ export function handleOwner(text, { config: cfg, store }) {
         toOwner(M.plain(`No encontré chat con ${arg1}`));
         break;
       }
-      Object.assign(session, newSession(arg1));
+      resetSession(session, arg1);
       store.saveSession(session);
       toOwner(M.plain(`🤖 El bot vuelve a atender a ${arg1}.`));
       break;
@@ -351,7 +401,7 @@ export function handleOwner(text, { config: cfg, store }) {
       toOwner(
         M.plain(
           pending.length
-            ? pending.map((o) => `${o.id} · ${o.name} · $${o.total.toFixed(2)} · ${o.paymentMethod}`).join('\n')
+            ? pending.map((o) => `${o.id} · ${o.name} · ${o.qty} cuad. · $${o.total.toFixed(2)} · ${o.paymentMethod}`).join('\n')
             : 'No hay pagos por verificar 🙌'
         )
       );

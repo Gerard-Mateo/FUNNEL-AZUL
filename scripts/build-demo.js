@@ -10,9 +10,10 @@ import { fileURLToPath } from 'node:url';
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
 
+const pricingCode = read('src/pricing.js').replace(/^export /gm, '');
 const messages = read('src/messages.js');
 const exported = [...messages.matchAll(/^export const (\w+)/gm)].map((m) => m[1]);
-const messagesCode = messages.replace(/^export /gm, '') + `\nconst M = { ${exported.join(', ')} };\n`;
+const messagesCode = messages.replace(/^import .*$/gm, '').replace(/^export /gm, '') + `\nconst M = { ${exported.join(', ')} };\n`;
 const flowCode = read('src/flow.js')
   .replace(/^import .*$/gm, '')
   .replace(/^export /gm, '');
@@ -20,7 +21,7 @@ const flowCode = read('src/flow.js')
 const img = 'data:image/jpeg;base64,' + fs.readFileSync(path.join(root, 'assets/cuaderno-thumb.jpg')).toString('base64');
 
 const body = read('scripts/demo-template.html')
-  .replace('/*__BOT_CODE__*/', () => `${messagesCode}\n${flowCode}`)
+  .replace('/*__BOT_CODE__*/', () => `${pricingCode}\n${messagesCode}\n${flowCode}`)
   .replaceAll('__IMG__', img);
 
 const full = `<!doctype html>
