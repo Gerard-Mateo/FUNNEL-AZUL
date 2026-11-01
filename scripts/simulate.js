@@ -68,7 +68,7 @@ for await (const raw of rl) {
       : n >= 1 && n <= lastButtons.length
         ? { buttonId: lastButtons[n - 1].id, text: lastButtons[n - 1].title }
         : { text: line };
-  const r = handleCustomer(session, incoming, { config: { ...config, ownerPhone: config.ownerPhone || 'OWNER' }, store });
+  const r = handleCustomer(session, { profileName: 'María Pérez', ...incoming }, { config: { ...config, ownerPhone: config.ownerPhone || 'OWNER' }, store });
   session = r.session;
   store.saveSession(session);
   show(r.out);

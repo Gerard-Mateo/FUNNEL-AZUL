@@ -23,6 +23,7 @@ export function createStore(dir) {
   const sessions = load('sessions.json');
   const orders = load('orders.json');
   const subscriptions = load('subscriptions.json');
+  const customers = load('customers.json'); // saved name/ID/address for returning customers
 
   return {
     getSession: (phone) => sessions[phone],
@@ -36,6 +37,11 @@ export function createStore(dir) {
     saveOrder(order) {
       orders[order.id] = { ...order };
       persist('orders.json', orders);
+    },
+    getCustomer: (phone) => customers[phone],
+    saveCustomer(customer) {
+      customers[customer.phone] = { ...customers[customer.phone], ...customer };
+      persist('customers.json', customers);
     },
     findSubscription: (id = '') => subscriptions[id.toUpperCase()],
     listSubscriptions: () => Object.values(subscriptions),

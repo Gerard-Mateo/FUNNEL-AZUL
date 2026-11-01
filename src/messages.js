@@ -1,10 +1,12 @@
 // Every text the bot sends. Edit freely to match your brand voice.
 // WhatsApp limits: max 3 buttons per message, button titles max 20 characters.
+// Why each message is written this way: docs/09-estrategia.md
 
-import { quote, hasFreeShipping } from './pricing.js';
-import { freqLabel, formatDate } from './subscriptions.js';
+import { quote, hasFreeShipping, planQuote } from './pricing.js';
+import { freqLabel, formatDate, planName } from './subscriptions.js';
 
 const $ = (n) => `$${Number(n).toFixed(2)}`;
+const $short = (n) => (Number.isInteger(Number(n)) ? `$${Number(n)}` : $(n)); // "$15" instead of "$15.00" in tight spots
 
 export const plain = (text) => ({ type: 'text', text });
 
@@ -16,51 +18,53 @@ const buttons = (text, list, headerImage) => ({
 });
 
 const cuadernos = (n) => (n === 1 ? '1 cuaderno' : `${n} cuadernos`);
+const firstName = (name = '') => name.split(' ')[0];
 
-// The pack is the second price tier (e.g. 3 notebooks at $12 each).
-export const packQty = (cfg) => cfg.pricing[1]?.min;
-
-// ---------- Customer flow ----------
+// ---------- 1. Offer: one decision, "yes" ----------
 
 export const productOffer = (cfg) =>
   buttons(
-    `¡Hola! 💙 Gracias por escribirnos.\n\n` +
-      `Este es *${cfg.product.name}*\n` +
+    `¡Hola! 💙 Este es *${cfg.product.name}*\n` +
       `${cfg.product.description}\n\n` +
-      `💵 *${$(cfg.product.price)}*\n\n` +
-      `📅 También puedes *suscribirte* y recibir uno nuevo ${freqLabel(1)} o ${freqLabel(2)}, con envío incluido.`,
+      `💵 *${$(cfg.product.price)}*\n` +
+      `🚚 Envío a todo Ecuador o retiro GRATIS en tienda`,
     [
       ['yes', '¡Lo quiero! 😍'],
-      ['sub', '📅 Suscripción'],
       ['question', 'Tengo una pregunta'],
     ],
     cfg.product.imageUrl || undefined
   );
 
-// The ONLY upsell moment: the pack is offered right next to the single notebook.
-export const askQty = (cfg, retry = false) => {
-  const pack = packQty(cfg);
+// ---------- 2. The upsell: right after "yes", one message, 3 options ----------
+// Single (what they asked for) · Club (target, in the middle) · Annual (anchor, biggest saving)
+
+export const planOffer = (cfg, retry = false) => {
+  const months = cfg.subscription.defaultMonths;
+  const club = planQuote('club', months, cfg);
+  const annual = cfg.subscription.annualPrice > 0 ? planQuote('annual', months, cfg) : null;
   const lines = [
-    retry ? 'Elige una opción o escríbeme el número 🙏' : '¡Excelente elección! 🙌 ¿Cuántos quieres?',
+    retry ? 'Toca una opción 👇' : '¡Buenísimo! 🙌 Antes de tus datos, mira esto 👀',
     '',
-    `• 1 cuaderno: ${$(cfg.product.price)}`,
+    `🔹 *Solo este*: ${$short(cfg.product.price)} (+ ${$(cfg.shippingCost)} de envío)`,
+    '',
+    `⭐ *Club Azul*: uno nuevo ${freqLabel(months)} a *${$short(club.unit)}*, envío GRATIS.`,
+    `Ahorras ${$short(club.savings)} en cada envío y cancelas cuando quieras.`,
   ];
-  const opts = [['qty_1', '1 cuaderno']];
-  if (pack && pack <= cfg.maxQty) {
-    const q = quote(pack, 'delivery', cfg);
-    const free = hasFreeShipping(pack, cfg) ? ' + envío GRATIS 🚚' : '';
-    lines.push(`• *Pack de ${pack}: ${$(q.subtotal)}* (${$(q.unit)} c/u)${free}`);
-    opts.push([`qty_${pack}`, `⭐ Pack de ${pack}`]);
+  const opts = [
+    ['plan_single', `Solo este · ${$short(cfg.product.price)}`],
+    ['plan_club', `⭐ Club · ${$short(club.unit)} c/u`],
+  ];
+  if (annual) {
+    lines.push(
+      '',
+      `💎 *Anual*: ${cuadernos(annual.deliveries)} por *${$short(annual.total)}* (${$short(annual.unit)} c/u), un solo pago, envío GRATIS.`,
+      `*Ahorras ${$short(annual.savings)}* en el año.`
+    );
+    opts.push(['plan_annual', `💎 Anual · ${$short(annual.total)}`]);
   }
-  opts.push(['qty_more', 'Otra cantidad']);
+  lines.push('', '_¿Quieres varios? Escribe cuántos._');
   return buttons(lines.join('\n'), opts);
 };
-
-export const askQtyNumber = (cfg, retry = false) =>
-  plain(
-    (retry ? 'Escríbeme solo el número, porfa 🙏\n\n' : '') +
-      `¿Cuántos cuadernos quieres? Escribe el número (hasta ${cfg.maxQty}).`
-  );
 
 export const wholesale = (qty) =>
   plain(
@@ -68,185 +72,110 @@ export const wholesale = (qty) =>
       'Una persona de nuestro equipo te escribe en breve por aquí 🙌\n\n(Escribe *reiniciar* para volver al menú)'
   );
 
-export const askMethod = (cfg, qty = 1) => {
-  const delivery = hasFreeShipping(qty, cfg)
-    ? `🚚 *Envío a domicilio* con LAAR: *GRATIS* 🎉 (${cfg.deliveryDays})`
-    : `🚚 *Envío a domicilio* con LAAR: ${$(cfg.shippingCost)} (${cfg.deliveryDays})`;
-  return buttons('¿Cómo prefieres recibirlo?\n\n' + delivery + '\n🏬 *Retiro en tienda*: GRATIS', [
-    ['delivery', '🚚 Envío'],
-    ['pickup', '🏬 Retiro en tienda'],
-  ]);
+// ---------- 3. Data: address (or pickup) -> name -> cédula ----------
+
+export const askAddress = (order, cfg, retry = false) => {
+  const isSub = order.kind === 'subscription';
+  const freeShip = isSub || hasFreeShipping(order.qty, cfg);
+  const text =
+    (retry ? 'Necesito un poquito más de detalle 🙏\n\n' : '') +
+    '📍 ¿A dónde te lo enviamos?\n' +
+    'Escribe tu *ciudad y dirección* en un mensaje.\n' +
+    '_Ej: Quito, Av. Amazonas N34 y Rusia, casa azul frente al parque_\n\n' +
+    (freeShip
+      ? `🚚 Envío LAAR *GRATIS* · ${cfg.deliveryDays}`
+      : `🚚 Envío LAAR ${$(cfg.shippingCost)} · ${cfg.deliveryDays}\n🏬 O retíralo *GRATIS* en nuestra tienda 👇`);
+  return isSub ? plain(text) : buttons(text, [['pickup', '🏬 Prefiero retirar']]);
 };
 
+// Returning customer: one tap instead of typing everything again.
+export const askSameAddress = (customer, order) =>
+  buttons(`¿Te lo enviamos a la misma dirección? 📍\n${customer.address}`, [
+    ['same_address', '✅ Sí, a esa'],
+    ['other_address', 'Otra dirección'],
+    ...(order.kind === 'subscription' ? [] : [['pickup', '🏬 Prefiero retirar']]),
+  ]);
+
+// WhatsApp gives us the profile name: confirming it is one tap.
+export const askNameConfirm = (profileName) =>
+  buttons(`¿El pedido va a nombre de *${profileName}*?`, [
+    ['name_ok', '✅ Sí'],
+    ['name_other', 'Otro nombre'],
+  ]);
+
 export const askName = (retry = false) =>
-  plain(retry ? 'Escríbeme tu nombre completo, porfa 🙏' : '¡Perfecto! ¿A nombre de quién va el pedido? (nombre y apellido)');
+  plain(retry ? 'Escríbeme tu nombre y apellido, porfa 🙏' : '¿A nombre de quién va? (nombre y apellido)');
 
 export const askCedula = (retry = false) =>
   plain(
     retry
       ? 'Mmm, eso no parece una cédula. Escribe los 10 dígitos (o 13 si es RUC) 🙏'
-      : 'Gracias 😊 ¿Me ayudas con tu número de cédula? LAAR lo necesita para la guía de envío.'
+      : '🪪 Tu número de cédula, porfa (LAAR lo pide para la guía).'
   );
 
-export const askCity = (retry = false) =>
-  plain(retry ? '¿En qué ciudad estás? 🙏' : '¿A qué ciudad lo enviamos? 📍');
+// ---------- 4. Summary ----------
 
-export const askAddress = (retry = false) =>
-  plain(
-    (retry ? 'Necesito un poquito más de detalle 🙏\n\n' : '') +
-      'Escríbeme la dirección completa en un solo mensaje:\n' +
-      '• Calle principal y secundaria\n' +
-      '• Número de casa / departamento\n' +
-      '• Una referencia (ej. "frente al parque")'
-  );
-
-const confirmButtons = [
-  ['confirm', '✅ Confirmar'],
-  ['edit', '✏️ Corregir'],
-];
+const customerLines = (order, cfg) => {
+  const who = `👤 ${order.name}${order.cedula ? ` · ${order.cedula}` : ''}`;
+  return order.method === 'pickup'
+    ? [who, `🏬 Retiras en: ${cfg.store.address}`, `🕒 ${cfg.store.hours}`, `🗺️ ${cfg.store.mapsUrl}`]
+    : [who, `📍 ${order.address}`];
+};
 
 export const summary = (order, cfg) => {
-  const qty = order.qty ?? 1;
-  const q = quote(qty, order.method, cfg);
-  const lines = [
-    '📝 *Resumen de tu pedido*',
-    '',
-    qty === 1
-      ? `1 × ${cfg.product.name} — ${$(q.subtotal)}`
-      : `${qty} × ${cfg.product.name} (${$(q.unit)} c/u) — ${$(q.subtotal)}`,
-  ];
-  if (q.savings > 0) lines.push(`🎉 Ahorras ${$(q.savings)}`);
-  lines.push(
-    order.method === 'delivery'
-      ? q.shipping === 0
-        ? '🚚 Envío LAAR — GRATIS'
-        : `🚚 Envío LAAR — ${$(q.shipping)}`
-      : '🏬 Retiro en tienda — GRATIS',
-    `*Total: ${$(q.total)}*`,
-    '',
-    `👤 ${order.name}`
-  );
-  if (order.method === 'delivery') {
-    lines.push(`🪪 ${order.cedula}`, `📍 ${order.city} — ${order.address}`);
+  const isSub = order.kind === 'subscription';
+  const lines = [];
+  if (isSub) {
+    const p = planQuote(order.plan, order.months, cfg);
+    lines.push(`📝 *Tu ${planName(order.plan)}*`, '');
+    if (order.plan === 'annual') {
+      lines.push(
+        `📅 ${cuadernos(p.deliveries)}, uno ${freqLabel(p.months)}`,
+        `💵 ${$(p.total)} (${$(p.unit)} c/u), envío incluido`,
+        `🎉 Ahorras ${$(p.savings)}`
+      );
+    } else {
+      lines.push(`📅 1 cuaderno ${freqLabel(p.months)}`, `💵 ${$(p.unit)} por envío, envío incluido`);
+    }
+    lines.push('🚚 El primero sale apenas confirmes el pago', `*Hoy pagas: ${$(p.total)}*`);
   } else {
-    lines.push(`📍 Retiras en: ${cfg.store.address}`, `🕒 ${cfg.store.hours}`, `🗺️ ${cfg.store.mapsUrl}`);
+    const q = quote(order.qty, order.method, cfg);
+    lines.push(
+      '📝 *Tu pedido*',
+      '',
+      order.qty === 1
+        ? `1 × ${cfg.product.name} — ${$(q.subtotal)}`
+        : `${order.qty} × ${cfg.product.name} (${$(q.unit)} c/u) — ${$(q.subtotal)}`
+    );
+    if (q.savings > 0) lines.push(`🎉 Ahorras ${$(q.savings)}`);
+    lines.push(
+      order.method === 'pickup' ? '🏬 Retiro en tienda — GRATIS' : `🚚 Envío LAAR — ${q.shipping ? $(q.shipping) : 'GRATIS'}`,
+      `*Total: ${$(q.total)}*`
+    );
   }
-  lines.push('', '¿Está todo bien?');
-  return buttons(lines.join('\n'), confirmButtons);
+  lines.push('', ...customerLines(order, cfg));
+  return buttons(lines.join('\n'), [
+    ['confirm', '✅ Confirmar y pagar'],
+    ...(isSub ? [['toggle_freq', order.months === 1 ? '📅 Cada 2 meses' : '📅 Mejor cada mes']] : []),
+    ['edit', '✏️ Corregir'],
+  ]);
 };
 
-// ---------- Subscription ----------
+// ---------- 5. Payment: DeUna QR straight away, transfer one tap away ----------
 
-export const subOffer = (cfg) => {
-  const single = quote(1, 'delivery', cfg).total;
-  const saving = single - cfg.subscription.price;
-  return buttons(
-    `📅 *Suscripción ${cfg.product.name}*\n\n` +
-      `Recibe un cuaderno nuevo en tu casa, sin preocuparte de nada.\n\n` +
-      `💵 *${$(cfg.subscription.price)} por envío*, con envío LAAR incluido` +
-      (saving > 0 ? ` (ahorras ${$(saving)} cada vez)` : '') +
-      `\n🔔 Te avisamos unos días antes de cada envío para pagarlo\n` +
-      `❌ Cancelas cuando quieras escribiendo *cancelar*\n\n` +
-      `¿Cada cuánto lo quieres?`,
-    [
-      ['sub_1', '📅 Cada mes'],
-      ['sub_2', '📅 Cada 2 meses'],
-    ]
-  );
-};
-
-export const subSummary = (order, cfg) =>
+export const payDeuna = (order, cfg, intro = '') =>
   buttons(
-    [
-      '📝 *Resumen de tu suscripción*',
-      '',
-      `📅 1 × ${cfg.product.name} ${freqLabel(order.months)}`,
-      `💵 ${$(order.total)} por envío (envío incluido)`,
-      `🚚 Primer envío: ahora, al confirmar tu pago`,
-      '',
-      `👤 ${order.name}`,
-      `🪪 ${order.cedula}`,
-      `📍 ${order.city} — ${order.address}`,
-      '',
-      '¿Está todo bien?',
-    ].join('\n'),
-    confirmButtons
+    intro +
+      `¡Listo! Pedido *${order.id}* 🎉\n\n` +
+      `⚡ Paga *${$(order.total)}* con *DeUna*: escanea el QR desde DeUna o desde la app de tu banco.` +
+      (cfg.deunaPhone ? `\n¿No puedes escanear? Paga al ${cfg.deunaPhone}` : '') +
+      `\n\nDespués mándame aquí la *captura* 📸`,
+    [['pay_transfer', '🏦 Transferencia']],
+    cfg.deunaQrUrl || undefined
   );
-
-export const subActivated = (sub, cfg) =>
-  plain(
-    `✅ ¡Pago confirmado y suscripción activa! 💙\n\n` +
-      `Tu primer cuaderno sale con LAAR (${cfg.deliveryDays}). Te enviaremos la guía.\n\n` +
-      `📅 Próximo envío: *${formatDate(sub.nextShipDate)}*\n` +
-      `Te escribimos unos días antes para el pago. Para cancelar, escribe *cancelar* cuando quieras.`
-  );
-
-export const subRenewed = (sub, cfg) =>
-  plain(
-    `✅ ¡Pago confirmado! Tu cuaderno de este ${sub.months === 1 ? 'mes' : 'periodo'} sale con LAAR (${cfg.deliveryDays}) 🚚\n\n` +
-      `📅 Siguiente envío: *${formatDate(sub.nextShipDate)}*`
-  );
-
-// Sent by the server a few days before each delivery. Outside the 24-hour window
-// WhatsApp only allows approved templates, so this is a template message.
-// `text` is only a preview for the simulator/demo; WhatsApp shows the approved template.
-export const subReminder = (sub, cfg) => ({
-  type: 'template',
-  name: cfg.subscription.reminderTemplate,
-  lang: cfg.subscription.templateLang,
-  params: [sub.name.split(' ')[0], formatDate(sub.nextShipDate), $(sub.price)],
-  text:
-    `Hola ${sub.name.split(' ')[0]} 💙 Tu próximo cuaderno de la suscripción sale el ` +
-    `*${formatDate(sub.nextShipDate)}*. Total: *${$(sub.price)}* (envío incluido). ¿Lo pagamos?`,
-  buttons: [
-    { id: `sub_pay_${sub.id}`, title: 'Pagar envío' },
-    { id: `sub_cancel_${sub.id}`, title: 'Cancelar suscripción' },
-  ],
-});
-
-export const askCancelSub = (sub) =>
-  buttons(
-    `¿Seguro que quieres cancelar tu suscripción (${freqLabel(sub.months)})? 🥺\n` +
-      `Tu próximo envío sería el ${formatDate(sub.nextShipDate)}.`,
-    [
-      ['sub_cancel_yes', 'Sí, cancelar'],
-      ['sub_cancel_no', 'No, la mantengo 💙'],
-    ]
-  );
-
-export const subCancelled = () =>
-  plain('Listo, cancelamos tu suscripción. ¡Gracias por estar con nosotros! 💙 Si un día quieres volver, solo escríbenos.');
-
-export const subKept = () => plain('¡Genial! 🙌 Tu suscripción sigue activa 💙');
-
-// ---------- Payment ----------
-
-export const askPayment = (order) =>
-  buttons(
-    `¡Listo! Tu pedido es el *${order.id}* 🎉\n\n` +
-      `Total a pagar: *${$(order.total)}*\n\n` +
-      '¿Cómo quieres pagar?\n' +
-      '⚡ *DeUna*: al instante, escaneando nuestro QR\n' +
-      '🏦 *Transferencia* bancaria',
-    [
-      ['pay_deuna', '⚡ DeUna'],
-      ['pay_transfer', '🏦 Transferencia'],
-    ]
-  );
-
-export const deunaInstructions = (order, cfg) => {
-  const text =
-    `⚡ *Paga con DeUna*\n\n` +
-    `1. Abre tu app DeUna (o la de tu banco con "Pagar con QR")\n` +
-    `2. Escanea este QR\n` +
-    `3. Paga *${$(order.total)}*\n` +
-    (cfg.deunaPhone ? `\n¿No puedes escanear? Paga al número ${cfg.deunaPhone}\n` : '') +
-    `\nCuando termines, envíame aquí la *captura del comprobante* 📸`;
-  return cfg.deunaQrUrl ? [{ type: 'image', link: cfg.deunaQrUrl, caption: text }] : [plain(text)];
-};
 
 export const transferInstructions = (order, cfg) =>
-  plain(
+  buttons(
     `🏦 *Datos para transferencia*\n\n` +
       `Banco: ${cfg.bank.name}\n` +
       `Cuenta ${cfg.bank.accountType}: ${cfg.bank.accountNumber}\n` +
@@ -255,14 +184,12 @@ export const transferInstructions = (order, cfg) =>
       (cfg.bank.email ? `Correo: ${cfg.bank.email}\n` : '') +
       `\nMonto: *${$(order.total)}*\n` +
       `Referencia: *${order.id}*\n\n` +
-      `Cuando termines, envíame aquí la *captura del comprobante* 📸`
+      `Después mándame aquí la *captura* 📸`,
+    [['pay_deuna', '⚡ Mejor DeUna']]
   );
 
 export const askReceipt = () =>
-  plain(
-    'Estoy esperando la *foto o captura* de tu comprobante 📸\n\n' +
-      'Si quieres pagar de otra forma escribe *cambiar*. Si necesitas ayuda escribe *asesor*.'
-  );
+  plain('Estoy esperando la *captura* de tu pago 📸\n\n¿Necesitas ayuda? Escribe *asesor*.');
 
 export const receiptReceived = () =>
   plain('¡Recibido! 🙌 Estamos verificando tu pago, te confirmamos en unos minutos 💙');
@@ -270,52 +197,127 @@ export const receiptReceived = () =>
 export const stillVerifying = (order) =>
   plain(`Seguimos verificando el pago del pedido *${order.id}* ⏳ Te escribimos apenas esté listo.`);
 
+// ---------- 6. After payment ----------
+
 export const paymentConfirmed = (order, cfg) =>
   plain(
     order.method === 'delivery'
-      ? `✅ ¡Pago confirmado! Tu pedido *${order.id}* ya se prepara para salir con LAAR Courier 🚚\n\n` +
-          `Tiempo estimado: ${cfg.deliveryDays}. Te enviaremos tu número de guía para que lo rastrees.\n\n¡Gracias por tu compra! 💙`
+      ? `✅ ¡Pago confirmado! Tu pedido *${order.id}* sale con LAAR (${cfg.deliveryDays}) 🚚\n` +
+          `Te mando la guía apenas lo despachemos. ¡Gracias por tu compra! 💙`
       : `✅ ¡Pago confirmado! Tu pedido *${order.id}* te espera en la tienda 🏬\n\n` +
           `📍 ${cfg.store.address}\n🕒 ${cfg.store.hours}\n🗺️ ${cfg.store.mapsUrl}\n\n` +
-          `Solo di tu nombre o el código *${order.id}* al llegar. ¡Gracias por tu compra! 💙`
+          `Di tu nombre o el código *${order.id}* al llegar. ¡Gracias por tu compra! 💙`
+  );
+
+export const subActivated = (sub, cfg) =>
+  plain(
+    `✅ ¡Pago confirmado! Bienvenida/o al *${planName(sub.plan)}* 💙\n\n` +
+      (sub.plan === 'annual'
+        ? `Tu cuaderno 1 de ${sub.deliveries} sale con LAAR (${cfg.deliveryDays}).\n` +
+          `📅 El siguiente: *${formatDate(sub.nextShipDate)}*. Ya está pagado, no tienes que hacer nada más ✨`
+        : `Tu primer cuaderno sale con LAAR (${cfg.deliveryDays}).\n` +
+          `📅 El siguiente: *${formatDate(sub.nextShipDate)}*. Te escribimos unos días antes para el pago.\n` +
+          `Para cancelar, escribe *cancelar* cuando quieras.`)
+  );
+
+export const subRenewed = (sub, cfg) =>
+  plain(
+    `✅ ¡Pago confirmado! Tu cuaderno sale con LAAR (${cfg.deliveryDays}) 🚚\n` +
+      `📅 El siguiente: *${formatDate(sub.nextShipDate)}*`
   );
 
 export const trackingSent = (order) =>
-  plain(`🚚 ¡Tu pedido *${order.id}* ya está en camino!\n\nGuía LAAR: *${order.tracking}*\nRastréalo en laarcourier.com 📦`);
+  plain(`🚚 ¡Tu cuaderno ya está en camino!\n\nGuía LAAR: *${order.tracking}*\nRastréalo en laarcourier.com 📦`);
+
+// ---------- Templates (WhatsApp only lets you write first, or after 24 h, with approved templates) ----------
+// `text` is only a preview for the simulator/demo; WhatsApp shows the approved template text.
+
+export const renewalReminder = (sub, cfg) => ({
+  type: 'template',
+  name: cfg.templates.renewal,
+  lang: cfg.templates.lang,
+  params: [firstName(sub.name), formatDate(sub.nextShipDate), $(sub.price)],
+  text:
+    `Hola ${firstName(sub.name)} 💙 Tu suscripción de ${cfg.product.name} se renueva el ` +
+    `*${formatDate(sub.nextShipDate)}*. Total: *${$(sub.price)}* (envío incluido). ¿La renovamos?`,
+  buttons: [
+    { id: `sub_pay_${sub.id}`, title: 'Pagar' },
+    { id: `sub_cancel_${sub.id}`, title: 'Cancelar suscripción' },
+  ],
+});
+
+export const trackingTemplate = (name, tracking, cfg) => ({
+  type: 'template',
+  name: cfg.templates.shipping,
+  lang: cfg.templates.lang,
+  params: [firstName(name), tracking],
+  text: `Hola ${firstName(name)} 📦 Tu cuaderno ya va en camino con LAAR. Guía: *${tracking}*. ¡Gracias! 💙`,
+  buttons: [],
+});
+
+// ---------- Cancel ----------
+
+export const askCancelSub = (sub) =>
+  buttons(`¿Seguro que quieres cancelar tu *${planName(sub.plan)}*? 🥺`, [
+    ['sub_cancel_yes', 'Sí, cancelar'],
+    ['sub_cancel_no', 'No, me quedo 💙'],
+  ]);
+
+export const subCancelled = (sub) =>
+  plain(
+    sub.deliveriesLeft > 0
+      ? `Listo, tu plan no se renovará. Igual te llegan los ${cuadernos(sub.deliveriesLeft)} que ya pagaste 💙`
+      : 'Listo, cancelamos tu suscripción. ¡Gracias por estar con nosotros! 💙 Si un día quieres volver, solo escríbenos.'
+  );
+
+export const subKept = () => plain('¡Genial! 🙌 Tu suscripción sigue activa 💙');
 
 export const handoffToHuman = () =>
   plain('¡Claro! 🙋‍♀️ Una persona de nuestro equipo te responde en breve por aquí.\n\n(Escribe *reiniciar* para volver al menú)');
 
 // ---------- Messages to you (the owner) ----------
 
+const orderLine = (o) =>
+  o.kind === 'subscription'
+    ? `📅 ${planName(o.plan).toUpperCase()} ${o.subId} · ${o.plan === 'annual' ? `${o.deliveries} cuadernos, ` : ''}${freqLabel(o.months)}${o.renewal ? ' · renovación' : ' · nuevo'}`
+    : `${o.qty} × cuaderno${o.qty > 1 ? ` (${$(o.unit)} c/u)` : ''}`;
+
 export const ownerNewPayment = (o) =>
   plain(
     `💰 *Nuevo comprobante* — ${o.id}\n\n` +
-      (o.subId
-        ? `📅 SUSCRIPCIÓN ${o.subId} · ${freqLabel(o.months)}${o.renewal ? ' · renovación' : ' · primer envío'}\n`
-        : `${o.qty} × cuaderno${o.qty > 1 ? ` (${$(o.unit)} c/u)` : ''}\n`) +
-      `${o.method === 'delivery' ? 'ENVÍO LAAR' : 'RETIRO'}${o.method === 'delivery' && !o.shipping ? ' (gratis/incluido)' : ''}\n` +
+      `${orderLine(o)}\n` +
+      `${o.method === 'delivery' ? `ENVÍO LAAR${o.shipping ? '' : ' (gratis/incluido)'}` : 'RETIRO EN TIENDA'}\n` +
       `Total: ${$(o.total)} vía ${o.paymentMethod}\n` +
       `👤 ${o.name}${o.cedula ? ` · ${o.cedula}` : ''}\n` +
-      (o.method === 'delivery' ? `📍 ${o.city} — ${o.address}\n` : '') +
+      (o.method === 'delivery' ? `📍 ${o.address}\n` : '') +
       `📱 wa.me/${o.phone}\n\n` +
       `Si el dinero llegó, responde:\n*pagado ${o.id}*`
   );
 
-export const ownerSubReminderSent = (sub) =>
+export const ownerShipDue = (sub) =>
   plain(
-    `🔔 Recordatorio enviado a ${sub.name} (${sub.id}) para el envío del ${formatDate(sub.nextShipDate)}. ` +
-      `Cuando pague te llega el comprobante.`
+    `📦 *Toca enviar*: cuaderno ${sub.deliveries - sub.deliveriesLeft + 1} de ${sub.deliveries} del Plan Anual\n` +
+      `${sub.name} · ${sub.cedula}\n📍 ${sub.address}\n📅 ${formatDate(sub.nextShipDate)}\n\n` +
+      `Ya está pagado. Cuando lo despaches:\n*guia ${sub.id} <número>*`
   );
 
+export const ownerRenewalSent = (sub) =>
+  plain(`🔔 Le pedí a ${sub.name} el pago de renovación de ${sub.id} (${$(sub.price)}). Si paga, te llega el comprobante.`);
+
 export const ownerSubCancelled = (sub) =>
-  plain(`❌ ${sub.name} canceló su suscripción ${sub.id} (${freqLabel(sub.months)}). wa.me/${sub.phone}`);
+  plain(`❌ ${sub.name} canceló su ${planName(sub.plan)} ${sub.id}. wa.me/${sub.phone}`);
 
 export const ownerSubList = (subs) =>
   plain(
     subs.length
       ? '📅 *Suscripciones activas*\n\n' +
-          subs.map((s) => `${s.id} · ${s.name} · ${freqLabel(s.months)} · próximo ${formatDate(s.nextShipDate)}`).join('\n')
+          subs
+            .map(
+              (s) =>
+                `${s.id} · ${s.name} · ${planName(s.plan)} ${freqLabel(s.months)} · próximo ${formatDate(s.nextShipDate)}` +
+                (s.plan === 'annual' ? ` · faltan ${s.deliveriesLeft}` : '')
+            )
+            .join('\n')
       : 'Aún no hay suscripciones activas.'
   );
 
@@ -338,9 +340,10 @@ export const ownerHelp = () =>
     '🛠️ *Comandos*\n\n' +
       '*pedidos* — pagos por verificar\n' +
       '*pagado AZ123* — confirma el pago y avisa al cliente\n' +
-      '*guia AZ123 123456* — envía la guía LAAR al cliente\n' +
-      '*suscripciones* — lista de suscripciones activas\n' +
-      '*recordar SUB123* — envía ya el recordatorio de pago de una suscripción\n' +
+      '*guia AZ123 123456* — envía la guía LAAR (pedido o renovación)\n' +
+      '*guia SUB123 123456* — despacha el siguiente cuaderno de un Plan Anual\n' +
+      '*suscripciones* — suscripciones activas y próximos envíos\n' +
+      '*recordar SUB123* — pide ya el pago de renovación\n' +
       '*responder 5939... hola!* — escribe a un cliente desde el número del bot\n' +
       '*bot 5939...* — devuelve un chat al bot'
   );

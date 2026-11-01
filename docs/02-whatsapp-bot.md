@@ -45,8 +45,8 @@ Edit the variables (on your host's dashboard, or `.env` locally):
 
 | Variable | Example |
 |---|---|
-| `PRICE_TIERS` | `1:15,3:12` (1 notebook $15, pack of 3 at $12 each, see [07-upselling.md](07-upselling.md)) |
-| `SUB_PRICE` | `13.00` per subscription delivery, see [08-suscripcion.md](08-suscripcion.md) |
+| `PRICE_TIERS` | `1:15` ($15 per notebook) |
+| `CLUB_PRICE`, `ANNUAL_PRICE` | `12.00`, `10.00` per notebook — the upsell, see [07-upselling.md](07-upselling.md) |
 | `FREE_SHIPPING_FROM` | `3` |
 | `PUBLIC_URL` | your server's address, e.g. `https://funnel-azul.up.railway.app` — the bot then sends `assets/cuaderno-azul.jpg` automatically |
 | `PRODUCT_IMAGE_URL` | optional: a different photo link (otherwise it uses the one in `assets/`) |

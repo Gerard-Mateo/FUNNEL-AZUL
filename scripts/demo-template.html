@@ -211,8 +211,9 @@ const config = {
     price: 15,
     imageUrl: '__IMG__',
   },
-  pricing: parseTiers('1:15,3:12'),
-  subscription: { price: 13, reminderDaysBefore: 3, reminderTemplate: 'recordatorio_suscripcion', templateLang: 'es' },
+  pricing: parseTiers('1:15'),
+  subscription: { clubPrice: 12, annualPrice: 10, defaultMonths: 2, reminderDaysBefore: 3 },
+  templates: { renewal: 'recordatorio_suscripcion', shipping: 'envio_en_camino', lang: 'es' },
   freeShippingFrom: 3,
   maxQty: 20,
   shippingCost: 4.5,
@@ -225,13 +226,15 @@ const config = {
 const CUSTOMER = '593981234567';
 
 /* ---- In-memory store ---- */
-const sessions = {}, orders = {}, subs = {};
+const sessions = {}, orders = {}, subs = {}, customers = {};
 const store = {
   getSession: (p) => sessions[p],
   saveSession: (s) => { sessions[s.phone] = s; },
   findOrder: (id = '') => orders[id.toUpperCase()],
   listOrders: () => Object.values(orders),
   saveOrder: (o) => { orders[o.id] = { ...o }; },
+  getCustomer: (p) => customers[p],
+  saveCustomer: (c) => { customers[c.phone] = { ...customers[c.phone], ...c }; },
   findSubscription: (id = '') => subs[id.toUpperCase()],
   listSubscriptions: () => Object.values(subs),
   saveSubscription: (s) => { subs[s.id] = { ...s }; },
@@ -324,7 +327,8 @@ async function customerSends(incoming, shown) {
   if (busy) return;
   busy = true;
   addBubble('customer', 'out', shown);
-  const r = handleCustomer(session, incoming, { config, store });
+  // In WhatsApp the customer's profile name arrives with each message.
+  const r = handleCustomer(session, { profileName: 'María Pérez', ...incoming }, { config, store });
   session = r.session;
   store.saveSession(session);
   await deliver(r.out);
@@ -373,25 +377,24 @@ function hint(label, action) {
 function updateHints() {
   const h = byId('hints');
   h.replaceChildren();
+  const say = (label, text = label) => h.append(hint(label, () => customerSends({ text }, esc(text))));
   if (view === 'customer') {
-    if (session.state === 'RECEIPT') h.append(hint('📷 Enviar comprobante', sendPhoto));
-    if (session.state === 'QTY_CUSTOM') for (const n of ['7', '12', '50']) h.append(hint(n, () => customerSends({ text: n }, n)));
-    if (session.state === 'D_NAME' || session.state === 'P_NAME') h.append(hint('María Pérez', () => customerSends({ text: 'María Pérez' }, 'María Pérez')));
-    if (session.state === 'D_ID') h.append(hint('1712345678', () => customerSends({ text: '1712345678' }, '1712345678')));
-    if (session.state === 'D_CITY') h.append(hint('Quito', () => customerSends({ text: 'Quito' }, 'Quito')));
-    if (session.state === 'D_ADDRESS') {
-      const a = 'Av. Amazonas N34 y Rusia, casa azul, frente al parque';
-      h.append(hint('Usar dirección de ejemplo', () => customerSends({ text: a }, esc(a))));
-    }
-    if (session.state !== 'HUMAN' && session.state !== 'START') h.append(hint('asesor', () => customerSends({ text: 'asesor' }, 'asesor')));
-    if (session.state === 'HUMAN') h.append(hint('reiniciar', () => customerSends({ text: 'reiniciar' }, 'reiniciar')));
+    if (session.state === 'PAY') h.append(hint('📷 Enviar comprobante', sendPhoto));
+    if (session.state === 'PLAN') say('Quiero 3', 'quiero 3');
+    if (session.state === 'ADDRESS') say('Usar dirección de ejemplo', 'Quito, Av. Amazonas N34 y Rusia, casa azul frente al parque');
+    if (session.state === 'NAME') say('María Pérez');
+    if (session.state === 'CEDULA') say('1712345678');
+    if (session.state !== 'HUMAN' && session.state !== 'START') say('asesor');
+    if (session.state === 'HUMAN') say('reiniciar');
   } else {
-    const pending = store.listOrders().filter((o) => o.status === 'verifying');
-    for (const o of pending) h.append(hint(`pagado ${o.id}`, () => ownerSends(`pagado ${o.id}`)));
+    for (const o of store.listOrders().filter((o) => o.status === 'verifying'))
+      h.append(hint(`pagado ${o.id}`, () => ownerSends(`pagado ${o.id}`)));
     for (const o of store.listOrders().filter((o) => o.status === 'paid' && o.method === 'delivery'))
       h.append(hint(`guia ${o.id} 0012345`, () => ownerSends(`guia ${o.id} 0012345`)));
     for (const s of store.listSubscriptions().filter((s) => s.status === 'active')) {
-      h.append(hint(`⏩ Saltar al próximo envío`, () => simulateReminder(s)));
+      if (s.deliveriesLeft > 0 && s.remindedFor === s.nextShipDate)
+        h.append(hint(`guia ${s.id} 0067890`, () => ownerSends(`guia ${s.id} 0067890`)));
+      else h.append(hint('⏩ Saltar al próximo envío', () => simulateReminder(s)));
     }
     if (store.listSubscriptions().length) h.append(hint('suscripciones', () => ownerSends('suscripciones')));
     if (session.state === 'HUMAN') {
@@ -410,9 +413,11 @@ async function simulateReminder(sub) {
   const [y, m, d] = sub.nextShipDate.split('-').map(Number);
   const day = new Date(Date.UTC(y, m - 1, d - config.subscription.reminderDaysBefore)).toISOString().slice(0, 10);
   addBubble('owner', 'out', `⏩ <em>Pasa el tiempo… hoy es ${formatDate(day)}</em>`);
-  await deliver(subscriptionReminders(day, { config, store }));
+  const out = subscriptionReminders(day, { config, store });
+  await deliver(out);
   busy = false;
-  setView('customer');
+  // Plan Anual: only you get "toca enviar". Club: the customer gets the renewal reminder.
+  if (out.some((o) => o.to === CUSTOMER)) setView('customer');
 }
 
 function sendPhoto() {
@@ -433,6 +438,7 @@ byId('compose').addEventListener('submit', (e) => {
 byId('reset').addEventListener('click', () => {
   for (const k of Object.keys(orders)) delete orders[k];
   for (const k of Object.keys(subs)) delete subs[k];
+  for (const k of Object.keys(customers)) delete customers[k];
   session = newSession(CUSTOMER);
   store.saveSession(session);
   for (const c of Object.values(chats)) c.querySelectorAll('.msg, .typing').forEach((m) => m.remove());

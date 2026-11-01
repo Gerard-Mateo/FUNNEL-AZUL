@@ -1,6 +1,5 @@
 // Volume pricing: the more notebooks, the lower the price per notebook.
-// Tiers come from PRICE_TIERS, e.g. "1:15,3:12"
-//   -> 1-2 notebooks $15 each, 3 or more $12 each (the 2nd tier is the "pack" the bot offers)
+// Tiers come from PRICE_TIERS, e.g. "1:15" (or "1:15,5:13" for a bulk price from 5)
 
 export const round = (n) => Math.round(n * 100) / 100;
 
@@ -27,4 +26,17 @@ export function quote(qty, method, cfg) {
   const savings = round(cfg.pricing[0].unit * qty - subtotal);
   const shipping = method === 'delivery' && !hasFreeShipping(qty, cfg) ? cfg.shippingCost : 0;
   return { qty, unit, subtotal, savings, shipping, total: round(subtotal + shipping) };
+}
+
+// Subscription plans. "club" = pay each delivery; "annual" = pay one year upfront.
+// Savings are measured against buying one notebook with delivery each time.
+export function planQuote(plan, months, cfg) {
+  const s = cfg.subscription;
+  const singleDelivered = quote(1, 'delivery', cfg).total;
+  if (plan === 'club') {
+    return { plan, months, deliveries: 1, unit: s.clubPrice, total: s.clubPrice, savings: round(singleDelivered - s.clubPrice) };
+  }
+  const deliveries = Math.round(12 / months);
+  const total = round(s.annualPrice * deliveries);
+  return { plan, months, deliveries, unit: s.annualPrice, total, savings: round(singleDelivered * deliveries - total) };
 }

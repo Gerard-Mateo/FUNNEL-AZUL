@@ -37,22 +37,27 @@ export const config = {
       (env('PUBLIC_URL') ? `${env('PUBLIC_URL').replace(/\/$/, '')}/assets/cuaderno-azul.jpg` : ''),
   },
 
-  // --- Volume pricing (upselling) ---
-  // "min:unitPrice" pairs. Default: 1 = $15 · pack of 3+ = $12 c/u
-  // The second tier is offered as the "pack" button.
-  pricing: parseTiers(env('PRICE_TIERS', '1:15,3:12')),
-  // Free LAAR delivery from this many notebooks (0 = never free)
+  // --- One-time purchase ---
+  // "min:unitPrice" pairs. Default: $15 per notebook. (e.g. "1:15,5:13" for a bulk price)
+  pricing: parseTiers(env('PRICE_TIERS', '1:15')),
+  // Free LAAR delivery from this many notebooks on one-time orders (0 = never)
   freeShippingFrom: Number.parseInt(env('FREE_SHIPPING_FROM', '3'), 10),
   // Above this, the chat goes to a person for a wholesale price
   maxQty: Number.parseInt(env('MAX_QTY', '20'), 10),
 
-  // --- Subscription: one notebook delivered every 1 or 2 months ---
+  // --- The upsell: Club (pay per delivery) and Annual (pay once) ---
   subscription: {
-    price: money('SUB_PRICE', '13.00'), // per delivery, LAAR shipping included
+    clubPrice: money('CLUB_PRICE', '12.00'), // per notebook, LAAR shipping included
+    annualPrice: money('ANNUAL_PRICE', '10.00'), // per notebook when the year is paid upfront (0 = no annual plan)
+    defaultMonths: Number.parseInt(env('SUB_DEFAULT_MONTHS', '2'), 10), // 1 notebook every N months (1 or 2)
     reminderDaysBefore: Number.parseInt(env('SUB_REMINDER_DAYS', '3'), 10),
-    // WhatsApp template (create it in WhatsApp Manager, see docs/08-suscripcion.md)
-    reminderTemplate: env('SUB_REMINDER_TEMPLATE', 'recordatorio_suscripcion'),
-    templateLang: env('SUB_TEMPLATE_LANG', 'es'),
+  },
+
+  // --- WhatsApp templates (needed to write to a customer after 24 h; see docs/08-suscripcion.md) ---
+  templates: {
+    renewal: env('TEMPLATE_RENEWAL', 'recordatorio_suscripcion'),
+    shipping: env('TEMPLATE_SHIPPING', 'envio_en_camino'),
+    lang: env('TEMPLATE_LANG', 'es'),
   },
 
   // --- Delivery (LAAR Courier) ---

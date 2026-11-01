@@ -7,21 +7,18 @@ Sales funnel for the **Cuaderno Azul**: Meta ad → WhatsApp → automatic chat 
 ```
  Instagram / Facebook ad          WhatsApp bot (this repo)                      You
  ───────────────────────          ─────────────────────────────────────────    ─────────────
- "Click to WhatsApp" ad   ──►  1. Photo + price   [¡Lo quiero!] [📅 Suscripción] [Pregunta]
- (pre-filled message:
-  "¡Hola! Quiero el            BUY                                 SUBSCRIBE
-   cuaderno azul 💙")          2. ¿Cuántos? [1] [⭐ Pack de 3] [Otra]   2. [Cada mes] [Cada 2 meses]
-                               3. ¿Envío o retiro?                   3. Delivery data (LAAR)
-                                  🚚 nombre → cédula → ciudad → dirección
-                                  🏬 nombre (+ store address, FREE)
-                               4. Resumen + total                [✅ Confirmar] [✏️ Corregir]
-                               5. ¿Cómo pagas?                   [⚡ DeUna] [🏦 Transferencia]
-                               6. Customer sends receipt photo  ──────────────►  📲 receipt + order details
-                                                                                  you reply "pagado AZ123"
-                               7. "¡Pago confirmado!"  ◄──────────────────────────┘
-                               8. "Tu guía LAAR es ..."  ◄────────────────────── "guia AZ123 <n°>"
+ "Click to WhatsApp" ad   ──►  1. Photo + price                  [¡Lo quiero!]
+ (pre-filled message:          2. THE UPSELL   [Solo este · $15] [⭐ Club · $12 c/u] [💎 Anual · $60]
+  "¡Hola! Quiero el            3. "Ciudad y dirección" in one message   or  [🏬 Retiro]
+   cuaderno azul 💙")          4. "¿A nombre de María Pérez?" (from WhatsApp profile)  [✅ Sí]
+                               5. Cédula (delivery only)
+                               6. Summary                         [✅ Confirmar y pagar]
+                               7. DeUna QR right away (transfer 1 tap away) → receipt ──►  📲 "pagado AZ123"
+                               8. "¡Pago confirmado!" ◄──────────────────────────────────┘
+                               9. LAAR tracking  ◄─────────────────────────────────────── "guia AZ123 <n°>"
 
- Subscriptions: 3 days before each delivery the bot sends a reminder → [Pagar envío] → steps 5–8 again.
+ Returning customers: "¿A la misma dirección?" → steps 4–5 skipped (5 steps total).
+ Club: renewal reminder before each delivery. Anual: paid once, YOU get "📦 Toca enviar".
 ```
 
 At any moment the customer can type **asesor** to talk to you (the bot goes quiet for that chat).
@@ -37,8 +34,9 @@ At any moment the customer can type **asesor** to talk to you (the bot goes quie
 | 4 | Put the bot online (WhatsApp Cloud API + this code) | 2–3 hours | [docs/02-whatsapp-bot.md](docs/02-whatsapp-bot.md) |
 | 5 | Launch the **Click-to-WhatsApp** ads | 1 hour | [docs/03-meta-ads.md](docs/03-meta-ads.md) |
 | 6 | Daily routine: verify payments, ship, send tracking | 15 min/day | [docs/06-operacion.md](docs/06-operacion.md) |
-| ⭐ | Upselling: the "Pack de 3" option | 5 min | [docs/07-upselling.md](docs/07-upselling.md) |
-| 📅 | Subscription (1 notebook every 1 or 2 months) + create the WhatsApp reminder template | 15 min | [docs/08-suscripcion.md](docs/08-suscripcion.md) |
+| 🧠 | **Why the funnel works this way** (research + psychology) | 5 min read | [docs/09-estrategia.md](docs/09-estrategia.md) |
+| ⭐ | The upsell: Solo / Club / Anual | 5 min | [docs/07-upselling.md](docs/07-upselling.md) |
+| 📅 | Club & Plan Anual + create the 2 WhatsApp templates | 15 min | [docs/08-suscripcion.md](docs/08-suscripcion.md) |
 
 > **Want to start selling this week, before the bot?** You can run steps 1–3 + 5 with the free
 > **WhatsApp Business app** and answer by hand using the same scripts (quick replies). See
@@ -74,7 +72,7 @@ Requires Node.js 18+ (no other dependencies).
 
 ```
 src/config.js      ← prices, shipping cost, store address, bank data (all from .env)
-src/pricing.js     ← pack price, savings, free shipping
+src/pricing.js     ← prices, plan prices (Club/Anual) and savings
 src/subscriptions.js ← subscription dates and reminders
 src/messages.js    ← every text the bot sends (edit the wording here)
 src/flow.js        ← the conversation steps + your admin commands
@@ -93,8 +91,9 @@ scripts/simulate.js← terminal simulator
 | `pedidos` | lists payments waiting for verification |
 | `pagado AZ1234` | confirms the payment and notifies the customer |
 | `guia AZ1234 0012345` | sends the LAAR tracking number to the customer |
+| `guia SUB1234 0012345` | ships the next prepaid notebook of a Plan Anual |
 | `responder 5939XXXXXXXX hola!` | writes to a customer from the business number |
 | `bot 5939XXXXXXXX` | gives a chat back to the bot after "asesor" |
 | `suscripciones` | lists active subscriptions and next delivery dates |
-| `recordar SUB1234` | sends a subscription's payment reminder now |
+| `recordar SUB1234` | asks for a subscription's renewal payment now |
 | `comandos` | shows this list |

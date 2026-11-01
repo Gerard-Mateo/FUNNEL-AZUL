@@ -116,8 +116,14 @@ export function createWhatsApp({ whatsappToken, phoneNumberId, graphVersion }) {
 }
 
 // Turn a raw webhook message into the simple shape the flow understands.
-export function parseIncoming(m) {
-  const incoming = { id: m.id, from: m.from, referral: m.referral };
+export function parseIncoming(m, contacts = []) {
+  const incoming = {
+    id: m.id,
+    from: m.from,
+    referral: m.referral,
+    // The customer's WhatsApp profile name (offered as a one-tap answer for "¿a nombre de quién?")
+    profileName: contacts.find((c) => c.wa_id === m.from)?.profile?.name,
+  };
   switch (m.type) {
     case 'text':
       incoming.text = m.text.body;

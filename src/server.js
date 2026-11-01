@@ -43,8 +43,8 @@ function runReminders() {
 setInterval(runReminders, 60 * 60 * 1000);
 setTimeout(runReminders, 10 * 1000);
 
-async function processMessage(raw) {
-  const incoming = parseIncoming(raw);
+async function processMessage(raw, contacts) {
+  const incoming = parseIncoming(raw, contacts);
   if (seen.has(incoming.id)) return;
   seen.add(incoming.id);
   if (seen.size > 5000) seen.clear();
@@ -114,7 +114,7 @@ const server = http.createServer((req, res) => {
       for (const entry of body.entry ?? []) {
         for (const change of entry.changes ?? []) {
           for (const msg of change.value?.messages ?? []) {
-            processMessage(msg).catch((err) => console.error('Processing failed:', err));
+            processMessage(msg, change.value.contacts).catch((err) => console.error('Processing failed:', err));
           }
         }
       }

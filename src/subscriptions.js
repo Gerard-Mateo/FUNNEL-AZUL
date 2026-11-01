@@ -21,6 +21,7 @@ export const dueForReminder = (subs, today, daysBefore) =>
   );
 
 export const freqLabel = (months) => (months === 1 ? 'cada mes' : `cada ${months} meses`);
+export const planName = (plan) => (plan === 'annual' ? 'Plan Anual' : 'Club Azul');
 
 export const formatDate = (isoDate) =>
   new Date(isoDate + 'T12:00:00Z').toLocaleDateString('es-EC', { day: 'numeric', month: 'long', timeZone: 'UTC' });

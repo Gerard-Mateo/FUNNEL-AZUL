@@ -1,16 +1,26 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { handleCustomer, handleOwner, isOwnerCommand, newSession, subscriptionReminders, S } from '../src/flow.js';
-import { parseTiers, quote } from '../src/pricing.js';
+import {
+  handleCustomer,
+  handleOwner,
+  isOwnerCommand,
+  looksLikeName,
+  newSession,
+  subscriptionReminders,
+  S,
+} from '../src/flow.js';
+import * as M from '../src/messages.js';
+import { parseTiers, quote, planQuote } from '../src/pricing.js';
 import { addMonths, dueForReminder } from '../src/subscriptions.js';
 
 const config = {
   ownerPhone: '593990000000',
   product: { name: 'Cuaderno Azul', description: 'Bonito', price: 15, imageUrl: 'https://x/img.jpg' },
-  pricing: parseTiers('1:15,3:12'),
+  pricing: parseTiers('1:15'),
   freeShippingFrom: 3,
   maxQty: 20,
-  subscription: { price: 13, reminderDaysBefore: 3, reminderTemplate: 'recordatorio_suscripcion', templateLang: 'es' },
+  subscription: { clubPrice: 12, annualPrice: 10, defaultMonths: 2, reminderDaysBefore: 3 },
+  templates: { renewal: 'recordatorio_suscripcion', shipping: 'envio_en_camino', lang: 'es' },
   shippingCost: 4.5,
   deliveryDays: '1 a 3 días',
   store: { address: 'Tienda', mapsUrl: 'https://maps', hours: '10-19' },
@@ -22,29 +32,30 @@ const memoryStore = () => {
   const sessions = {};
   const orders = {};
   const subs = {};
+  const customers = {};
   return {
     getSession: (p) => sessions[p],
     saveSession: (s) => (sessions[s.phone] = s),
     findOrder: (id = '') => orders[id.toUpperCase()],
     listOrders: () => Object.values(orders),
     saveOrder: (o) => (orders[o.id] = { ...o }),
+    getCustomer: (p) => customers[p],
+    saveCustomer: (c) => (customers[c.phone] = { ...customers[c.phone], ...c }),
     findSubscription: (id = '') => subs[id.toUpperCase()],
     listSubscriptions: () => Object.values(subs),
     saveSubscription: (s) => (subs[s.id] = { ...s }),
   };
 };
 
-const chat = (store, phone = '593981111111') => {
-  let session = newSession(phone);
+const chat = (store, phone = '593981111111', profileName = 'María Pérez') => {
+  let session = store.getSession(phone) ?? newSession(phone);
   return {
     get session() {
       return session;
     },
-    send(incoming) {
-      const r = handleCustomer(session, typeof incoming === 'string' ? { text: incoming } : incoming, {
-        config,
-        store,
-      });
+    send(incoming, now) {
+      const msg = typeof incoming === 'string' ? { text: incoming } : incoming;
+      const r = handleCustomer(session, { profileName, ...msg }, { config, store, now });
       session = r.session;
       store.saveSession(session);
       return r.out;
@@ -52,55 +63,57 @@ const chat = (store, phone = '593981111111') => {
   };
 };
 
-const fillDelivery = (c) => {
-  c.send('María Pérez');
-  c.send('1712345678');
-  c.send('Quito');
-  return c.send('Av. Amazonas N34 y Rusia, casa azul frente al parque');
-};
+const ADDRESS = 'Quito, Av. Amazonas N34 y Rusia, casa azul frente al parque';
+const allButtons = (out) => out.flatMap((o) => o.msg.buttons ?? []);
 
-test('product offer has buy, subscription and question buttons', () => {
+test('offer: just "yes" or a question, no subscription talk yet', () => {
   const c = chat(memoryStore());
   const [{ msg }] = c.send({ text: 'Hola! Quiero el cuaderno', referral: { source_id: 'AD123' } });
-  assert.deepEqual(msg.buttons.map((b) => b.id), ['yes', 'sub', 'question']);
-  assert.equal(msg.headerImage, 'https://x/img.jpg');
+  assert.deepEqual(msg.buttons.map((b) => b.id), ['yes', 'question']);
+  assert.doesNotMatch(msg.text, /suscri|club/i);
   assert.equal(c.session.adId, 'AD123');
 });
 
-test('quantity is ONE question with 3 options (1, pack, other) and no extra upsell', () => {
+test('the upsell comes right after yes: single, club (middle), annual', () => {
   const c = chat(memoryStore());
   c.send('hola');
   const [{ msg }] = c.send({ buttonId: 'yes' });
-  assert.deepEqual(msg.buttons.map((b) => b.id), ['qty_1', 'qty_3', 'qty_more']);
-  assert.match(msg.text, /Pack de 3: \$36\.00\* \(\$12\.00 c\/u\) \+ envío GRATIS/);
-  c.send({ buttonId: 'qty_1' });
-  assert.equal(c.session.state, S.METHOD); // straight to delivery method
+  assert.deepEqual(msg.buttons.map((b) => b.id), ['plan_single', 'plan_club', 'plan_annual']);
+  assert.match(msg.text, /Solo este\*: \$15 \(\+ \$4\.50 de envío\)/);
+  assert.match(msg.text, /Club Azul\*: uno nuevo cada 2 meses a \*\$12\*, envío GRATIS/);
+  assert.match(msg.text, /Ahorras \$7\.50 en cada envío/);
+  assert.match(msg.text, /6 cuadernos por \*\$60\* \(\$10 c\/u\)/);
+  assert.match(msg.text, /Ahorras \$57\* en el año/);
 });
 
-test('pack of 3 with delivery: free shipping, DeUna, receipt, owner confirms and sends tracking', () => {
+test('fastest path, new customer: single + delivery in 7 steps, profile name is one tap', () => {
   const store = memoryStore();
   const c = chat(store);
-  c.send('hola');
-  c.send({ buttonId: 'yes' });
-  const method = c.send({ buttonId: 'qty_3' });
-  assert.match(method[0].msg.text, /\*GRATIS\*/);
-  c.send({ buttonId: 'delivery' });
-  c.send('María Pérez');
-  assert.match(c.send('17-123456-7')[0].msg.text, /no parece/); // only 9 digits
-  c.send('1712345678');
-  c.send('Quito');
-  const summary = c.send('Av. Amazonas N34 y Rusia, casa azul frente al parque');
-  assert.match(summary[0].msg.text, /Total: \$36\.00/);
-  assert.match(summary[0].msg.text, /Ahorras \$9\.00/);
+  c.send('hola'); // 1 offer
+  c.send({ buttonId: 'yes' }); // 2 plan
+  const addr = c.send({ buttonId: 'plan_single' }); // 3 address
+  assert.match(addr[0].msg.text, /ciudad y dirección/);
+  assert.deepEqual(addr[0].msg.buttons.map((b) => b.id), ['pickup']);
+  const name = c.send(ADDRESS); // 4 name
+  assert.match(name[0].msg.text, /a nombre de \*María Pérez\*/);
+  assert.match(c.send({ buttonId: 'name_ok' })[0].msg.text, /cédula/); // 5 cédula
+  assert.match(c.send('17-123456-7')[0].msg.text, /no parece/); // 9 digits
+  const summary = c.send('1712345678'); // 6 summary
+  assert.match(summary[0].msg.text, /Envío LAAR — \$4\.50/);
+  assert.match(summary[0].msg.text, /Total: \$19\.50/);
+  assert.match(summary[0].msg.text, /María Pérez · 1712345678/);
   assert.deepEqual(summary[0].msg.buttons.map((b) => b.id), ['confirm', 'edit']);
 
-  c.send({ buttonId: 'confirm' });
+  const pay = c.send({ buttonId: 'confirm' }); // 7 pay: QR right away
+  assert.equal(pay[0].msg.headerImage, 'https://x/qr.png');
+  assert.deepEqual(pay[0].msg.buttons.map((b) => b.id), ['pay_transfer']);
   const order = c.session.order;
-  assert.equal(order.total, 36);
-  assert.equal(order.shipping, 0);
+  assert.equal(order.total, 19.5);
+  assert.equal(order.city, 'Quito');
+  assert.equal(order.paymentMethod, 'deuna');
 
-  assert.equal(c.send({ buttonId: 'pay_deuna' })[0].msg.type, 'image');
-  assert.match(c.send('ya pagué')[0].msg.text, /captura/);
+  assert.match(c.send({ buttonId: 'pay_transfer' })[0].msg.text, /Referencia: \*AZ/);
+  assert.equal(c.session.order.paymentMethod, 'transferencia');
   const afterReceipt = c.send({ imageId: 'MEDIA1' });
   const toOwner = afterReceipt.filter((o) => o.to === config.ownerPhone);
   assert.equal(toOwner[0].msg.type, 'forward_image');
@@ -112,28 +125,50 @@ test('pack of 3 with delivery: free shipping, DeUna, receipt, owner confirms and
   assert.match(handleOwner(`guia ${order.id} LAAR-999`, { config, store })[0].msg.text, /LAAR-999/);
 });
 
-test('single notebook, store pickup, typed answers', () => {
-  const c = chat(memoryStore());
-  c.send('hola');
-  c.send('Sí');
-  c.send('1');
-  c.send('lo retiro en la tienda');
-  const summary = c.send('Juan Andrade');
-  assert.match(summary[0].msg.text, /Total: \$15\.00/);
-  c.send('si');
-  assert.equal(c.session.order.total, 15);
-  assert.match(c.send('transferencia')[0].msg.text, /Referencia/);
-});
-
-test('custom quantity and wholesale handoff', () => {
-  const c = chat(memoryStore());
+test('returning customer: same address in one tap, name and cédula remembered', () => {
+  const store = memoryStore();
+  store.saveCustomer({ phone: '593981111111', name: 'María Pérez', cedula: '1712345678', address: ADDRESS, city: 'Quito' });
+  const c = chat(store);
   c.send('hola');
   c.send({ buttonId: 'yes' });
-  c.send({ buttonId: 'qty_more' });
-  assert.equal(c.session.state, S.QTY_CUSTOM);
-  c.send('quiero 7');
-  assert.equal(c.session.order.qty, 7);
-  assert.equal(c.session.state, S.METHOD);
+  const same = c.send({ buttonId: 'plan_single' });
+  assert.deepEqual(same[0].msg.buttons.map((b) => b.id), ['same_address', 'other_address', 'pickup']);
+  const summary = c.send({ buttonId: 'same_address' });
+  assert.equal(c.session.state, S.SUMMARY); // skipped name and cédula
+  assert.match(summary[0].msg.text, /1712345678/);
+});
+
+test('store pickup, typed answers, no profile name, an address mentioning "tienda" is still an address', () => {
+  const c = chat(memoryStore(), '593981234000', '✨ Mari ✨');
+  c.send('hola');
+  c.send('si');
+  c.send('solo este');
+  c.send('lo retiro');
+  const ask = c.send('x'); // too short for a name
+  assert.match(ask[0].msg.text, /nombre y apellido/);
+  const summary = c.send('Juan Andrade');
+  assert.match(summary[0].msg.text, /Retiro en tienda — GRATIS/);
+  assert.match(summary[0].msg.text, /Total: \$15\.00/);
+
+  const d = chat(memoryStore(), '593981234001');
+  d.send('hola');
+  d.send('si');
+  d.send('solo este');
+  d.send('Guayaquil, Av. 9 de Octubre 100, junto a la tienda Tía');
+  assert.equal(d.session.order.method, 'delivery');
+});
+
+test('several notebooks by typing a number; wholesale goes to a person', () => {
+  const c = chat(memoryStore());
+  c.send('hola');
+  c.send('si');
+  c.send('quiero 3');
+  assert.equal(c.session.order.qty, 3);
+  c.send(ADDRESS);
+  c.send({ buttonId: 'name_ok' });
+  const summary = c.send('1712345678');
+  assert.match(summary[0].msg.text, /Envío LAAR — GRATIS/); // free from 3
+  assert.match(summary[0].msg.text, /Total: \$45\.00/);
 
   const w = chat(memoryStore(), '593982222222');
   w.send('hola');
@@ -143,58 +178,98 @@ test('custom quantity and wholesale handoff', () => {
   assert.ok(out.some((o) => o.to === config.ownerPhone && /mayorista/.test(o.msg.text)));
 });
 
-test('subscription: sign up, first payment, reminder, renewal, cancel', () => {
+test('Club Azul: frequency switch in the summary, activation, renewal reminder, renewal, cancel', () => {
   const store = memoryStore();
   const c = chat(store);
   c.send('hola');
-  const offer = c.send({ buttonId: 'sub' });
-  assert.match(offer[0].msg.text, /\$13\.00 por envío/);
-  assert.match(offer[0].msg.text, /ahorras \$6\.50/); // vs $15 + $4.50
-  c.send({ buttonId: 'sub_2' });
-  assert.equal(c.session.order.months, 2);
-  const summary = fillDelivery(c);
-  assert.match(summary[0].msg.text, /cada 2 meses/);
+  c.send({ buttonId: 'yes' });
+  const addr = c.send({ buttonId: 'plan_club' });
+  assert.equal(addr[0].msg.type, 'text'); // subscriptions are always delivered: no pickup button
+  assert.match(addr[0].msg.text, /GRATIS/);
+  c.send(ADDRESS);
+  c.send({ buttonId: 'name_ok' });
+  const summary = c.send('1712345678');
+  assert.match(summary[0].msg.text, /1 cuaderno cada 2 meses/);
+  assert.deepEqual(summary[0].msg.buttons.map((b) => b.id), ['confirm', 'toggle_freq', 'edit']);
+  const monthly = c.send({ buttonId: 'toggle_freq' });
+  assert.match(monthly[0].msg.text, /1 cuaderno cada mes/);
+  assert.match(monthly[0].msg.text, /Hoy pagas: \$12\.00/);
   c.send({ buttonId: 'confirm' });
   const first = c.session.order;
-  assert.equal(first.total, 13);
-  const sub = store.findSubscription(first.subId);
-  assert.equal(sub.status, 'pending_payment');
+  const subId = first.subId;
+  assert.equal(store.findSubscription(subId).status, 'pending_payment');
 
-  c.send({ buttonId: 'pay_transfer' });
   c.send({ imageId: 'M1' });
   const activated = handleOwner(`pagado ${first.id}`, { config, store, today: '2026-11-01' });
-  assert.match(activated.find((o) => o.to === c.session.phone).msg.text, /suscripción activa/);
-  assert.equal(store.findSubscription(sub.id).status, 'active');
-  assert.equal(store.findSubscription(sub.id).nextShipDate, '2027-01-01');
+  assert.match(activated.find((o) => o.to === c.session.phone).msg.text, /Club Azul/);
+  let sub = store.findSubscription(subId);
+  assert.equal(sub.status, 'active');
+  assert.equal(sub.nextShipDate, '2026-12-01');
+  assert.equal(sub.deliveriesLeft, 0);
 
-  // Too early: no reminder. 3 days before: reminder (template) once.
-  assert.equal(subscriptionReminders('2026-12-20', { config, store }).length, 0);
-  const reminders = subscriptionReminders('2026-12-29', { config, store });
+  assert.equal(subscriptionReminders('2026-11-20', { config, store }).length, 0);
+  const reminders = subscriptionReminders('2026-11-28', { config, store });
   const tpl = reminders.find((o) => o.to === c.session.phone).msg;
   assert.equal(tpl.type, 'template');
-  assert.equal(tpl.name, 'recordatorio_suscripcion');
-  assert.deepEqual(tpl.params, ['María', '1 de enero', '$13.00']);
-  assert.equal(subscriptionReminders('2026-12-30', { config, store }).length, 0); // not twice
+  assert.deepEqual(tpl.params, ['María', '1 de diciembre', '$12.00']);
+  assert.equal(subscriptionReminders('2026-11-29', { config, store }).length, 0); // only once
 
-  // Customer taps "Pagar envío" from the template
-  const pay = c.send({ buttonId: `sub_pay_${sub.id}` });
-  assert.match(pay[0].msg.text, /\$13\.00/);
+  c.send({ buttonId: `sub_pay_${subId}` });
   const renewal = c.session.order;
-  assert.equal(renewal.renewal, true);
-  c.send({ buttonId: 'pay_deuna' });
+  assert.equal(renewal.total, 12);
   c.send({ imageId: 'M2' });
-  const renewed = handleOwner(`pagado ${renewal.id}`, { config, store });
-  assert.match(renewed.find((o) => o.to === c.session.phone).msg.text, /Siguiente envío/);
-  assert.equal(store.findSubscription(sub.id).nextShipDate, '2027-03-01');
+  handleOwner(`pagado ${renewal.id}`, { config, store });
+  assert.equal(store.findSubscription(subId).nextShipDate, '2027-01-01');
 
-  // Owner sees it, then the customer cancels
-  assert.match(handleOwner('suscripciones', { config, store })[0].msg.text, new RegExp(sub.id));
   c.send('cancelar');
   assert.equal(c.session.state, S.SUB_CANCEL);
-  const cancelled = c.send({ buttonId: 'sub_cancel_yes' });
-  assert.equal(store.findSubscription(sub.id).status, 'cancelled');
-  assert.ok(cancelled.some((o) => o.to === config.ownerPhone));
-  assert.equal(subscriptionReminders('2027-02-27', { config, store }).length, 0);
+  c.send({ buttonId: 'sub_cancel_yes' });
+  assert.equal(store.findSubscription(subId).status, 'cancelled');
+});
+
+test('Plan Anual: one payment, you get "toca enviar", guia SUB ships the next one, renews at the end', () => {
+  const store = memoryStore();
+  const c = chat(store);
+  c.send('hola');
+  c.send({ buttonId: 'yes' });
+  c.send({ buttonId: 'plan_annual' });
+  c.send(ADDRESS);
+  c.send({ buttonId: 'name_ok' });
+  const summary = c.send('1712345678');
+  assert.match(summary[0].msg.text, /6 cuadernos, uno cada 2 meses/);
+  assert.match(summary[0].msg.text, /Ahorras \$57\.00/);
+  assert.match(summary[0].msg.text, /Hoy pagas: \$60\.00/);
+  c.send({ buttonId: 'confirm' });
+  const order = c.session.order;
+  c.send({ imageId: 'M1' });
+  handleOwner(`pagado ${order.id}`, { config, store, today: '2026-11-01' });
+  let sub = store.findSubscription(order.subId);
+  assert.equal(sub.deliveriesLeft, 5);
+
+  // Before the next delivery YOU get the alert, the customer is not asked to pay
+  const due = subscriptionReminders('2026-12-29', { config, store });
+  assert.equal(due.length, 1);
+  assert.equal(due[0].to, config.ownerPhone);
+  assert.match(due[0].msg.text, /cuaderno 2 de 6/);
+
+  const shipped = handleOwner(`guia ${sub.id} LAAR-2`, { config, store, now: Date.now() });
+  assert.match(shipped[0].msg.text, /LAAR-2/);
+  sub = store.findSubscription(order.subId);
+  assert.equal(sub.deliveriesLeft, 4);
+  assert.equal(sub.nextShipDate, '2027-03-01');
+
+  // More than 24 h after the customer's last message, tracking goes as a template
+  const late = handleOwner(`guia ${sub.id} LAAR-3`, { config, store, now: Date.now() + 2 * 86400000 });
+  assert.equal(late[0].msg.type, 'template');
+  assert.equal(late[0].msg.name, 'envio_en_camino');
+
+  // Cancelling a prepaid plan keeps the paid deliveries, then it ends without asking to renew
+  c.send('cancelar');
+  const bye = c.send({ buttonId: 'sub_cancel_yes' });
+  assert.match(bye[0].msg.text, /te llegan los 3 cuadernos que ya pagaste/);
+  sub = store.findSubscription(order.subId);
+  assert.equal(sub.status, 'active');
+  assert.equal(sub.renew, false);
 });
 
 test('asking for a human pauses the bot and alerts the owner', () => {
@@ -205,22 +280,39 @@ test('asking for a human pauses the bot and alerts the owner', () => {
   assert.ok(out.some((o) => o.to === config.ownerPhone));
   assert.deepEqual(c.send('hola?'), []);
   c.send('reiniciar');
-  assert.equal(c.session.state, S.CONFIRM_PRODUCT);
+  assert.equal(c.session.state, S.OFFER);
 });
 
-test('owner commands are recognised only when they start the message', () => {
-  assert.ok(isOwnerCommand('pagado AZ123'));
-  assert.ok(isOwnerCommand('Guía AZ123 999'));
-  assert.ok(isOwnerCommand('suscripciones'));
-  assert.ok(!isOwnerCommand('hola quiero el cuaderno'));
+test('every button fits WhatsApp limits (max 3, 20 characters)', () => {
+  const order = { kind: 'one-time', qty: 1, method: 'delivery', name: 'A B', cedula: '1', address: 'x', id: 'AZ1', total: 1 };
+  const sub = { kind: 'subscription', plan: 'annual', months: 1, method: 'delivery', name: 'A B', address: 'x' };
+  const msgs = [
+    M.productOffer(config),
+    M.planOffer(config),
+    M.askAddress(order, config),
+    M.askSameAddress({ address: 'x' }, order),
+    M.askNameConfirm('A B'),
+    M.summary(order, config),
+    M.summary(sub, config),
+    M.payDeuna(order, config),
+    M.transferInstructions(order, config),
+    M.askCancelSub({ plan: 'club' }),
+  ];
+  for (const m of msgs) {
+    assert.ok(m.buttons.length <= 3);
+    for (const b of m.buttons) assert.ok([...b.title].length <= 20, b.title);
+  }
 });
 
-test('pricing and date math', () => {
-  assert.deepEqual(quote(2, 'delivery', config), { qty: 2, unit: 15, subtotal: 30, savings: 0, shipping: 4.5, total: 34.5 });
-  assert.equal(quote(3, 'delivery', config).total, 36);
+test('helpers: names, prices, dates, owner commands', () => {
+  assert.ok(looksLikeName('María Pérez'));
+  assert.ok(!looksLikeName('Mari'));
+  assert.ok(!looksLikeName('✨ Mari ✨'));
+  assert.deepEqual(quote(1, 'delivery', config), { qty: 1, unit: 15, subtotal: 15, savings: 0, shipping: 4.5, total: 19.5 });
+  assert.deepEqual(planQuote('annual', 1, config), { plan: 'annual', months: 1, deliveries: 12, unit: 10, total: 120, savings: 114 });
+  assert.equal(planQuote('club', 2, config).savings, 7.5);
   assert.equal(addMonths('2026-01-31', 1), '2026-02-28');
-  assert.equal(addMonths('2026-11-15', 2), '2027-01-15');
-  const subs = [{ status: 'active', nextShipDate: '2026-12-01' }];
-  assert.equal(dueForReminder(subs, '2026-11-27', 3).length, 0);
-  assert.equal(dueForReminder(subs, '2026-11-28', 3).length, 1);
+  assert.equal(dueForReminder([{ status: 'active', nextShipDate: '2026-12-01' }], '2026-11-28', 3).length, 1);
+  assert.ok(isOwnerCommand('Guía AZ123 999'));
+  assert.ok(!isOwnerCommand('hola quiero el cuaderno'));
 });

@@ -1,27 +1,36 @@
-# Upselling: simple y directo
+# Upselling: un solo momento, justo después del "¡Lo quiero!"
 
-Un solo momento de upsell, en la pregunta de cantidad. Sin preguntas extra.
+El porqué de cada decisión está en [09-estrategia.md](09-estrategia.md).
 
 ```
-¡Excelente elección! 🙌 ¿Cuántos quieres?
+¡Buenísimo! 🙌 Antes de tus datos, mira esto 👀
 
-• 1 cuaderno: $15.00
-• Pack de 3: $36.00 ($12.00 c/u) + envío GRATIS 🚚
+🔹 Solo este: $15 (+ $4.50 de envío)
 
-[1 cuaderno]  [⭐ Pack de 3]  [Otra cantidad]
+⭐ Club Azul: uno nuevo cada 2 meses a $12, envío GRATIS.
+Ahorras $7.50 en cada envío y cancelas cuando quieras.
+
+💎 Anual: 6 cuadernos por $60 ($10 c/u), un solo pago, envío GRATIS.
+Ahorras $57 en el año.
+
+¿Quieres varios? Escribe cuántos.
+
+[Solo este · $15]  [⭐ Club · $12 c/u]  [💎 Anual · $60]
 ```
 
-- El **pack** va justo al lado del cuaderno solo, con su precio por unidad y el envío gratis. Esa comparación es el upsell.
-- **Otra cantidad** deja escribir cualquier número del 1 al 20. **Más de 20** pasa a ti como **pedido mayorista** (te llega una alerta).
-- El resumen muestra "🎉 Ahorras $9.00" cuando llevan el pack.
-- La otra forma de vender más es la **suscripción**: ver [08-suscripcion.md](08-suscripcion.md).
+- La frecuencia (cada mes o cada 2 meses) **no es una pregunta aparte**. Va por defecto y se cambia con un botón en el resumen (**📅 Mejor cada mes**).
+- Si escriben un número ("quiero 3") es compra normal de varios. Con 3 o más, el envío es gratis. **Más de 20** pasa a ti como mayorista.
 
 ## Configurar
 
 ```
-PRICE_TIERS=1:15,3:12     # cantidad mínima : precio por cuaderno. El 2º nivel es el "pack"
-FREE_SHIPPING_FROM=3      # envío gratis desde N cuadernos (0 = nunca)
-MAX_QTY=20                # más que esto = mayorista con una persona
+PRICE_TIERS=1:15          # precio normal por cuaderno
+CLUB_PRICE=12.00          # Club: $ por cuaderno, envío incluido
+ANNUAL_PRICE=10.00        # Anual: $ por cuaderno pagando el año (0 = no mostrar el Anual)
+SUB_DEFAULT_MONTHS=2      # frecuencia por defecto (1 o 2)
+FREE_SHIPPING_FROM=3      # compra normal: envío gratis desde N cuadernos
 ```
 
-⚠️ **Los precios son de ejemplo.** Con el pack a $12 c/u y envío gratis, el envío LAAR lo pagas tú. Revisa tu margen antes de lanzar.
+Los ahorros que ve el cliente se calculan solos contra comprar 1 cuaderno + envío cada vez.
+
+⚠️ **Precios de ejemplo.** En el Club y el Anual el envío LAAR lo pagas tú. Revisa: `precio − costo del cuaderno − envío` tiene que dejarte margen.
