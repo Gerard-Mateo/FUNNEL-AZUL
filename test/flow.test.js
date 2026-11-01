@@ -87,6 +87,15 @@ test('the upsell comes right after yes: one-time purchase, club (middle), annual
   assert.match(msg.text, /Ahorras \$57\* en el año/);
 });
 
+test('with the plans card, the upsell shows the image and a short text', () => {
+  const msg = M.planOffer({ ...config, planImageUrl: 'https://x/planes.jpg' });
+  assert.equal(msg.headerImage, 'https://x/planes.jpg');
+  assert.deepEqual(msg.buttons.map((b) => b.id), ['plan_single', 'plan_club', 'plan_annual']);
+  assert.match(msg.text, /envío es \*GRATIS\*/);
+  assert.ok(msg.text.length < 300, 'short text: the image does the comparing');
+  assert.equal(M.planOffer(config).headerImage, undefined); // no image -> full text version
+});
+
 test('fastest path, new customer: single + delivery in 7 steps, profile name is one tap', () => {
   const store = memoryStore();
   const c = chat(store);

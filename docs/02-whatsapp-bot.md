@@ -48,7 +48,7 @@ Edit the variables (on your host's dashboard, or `.env` locally):
 | `PRICE_TIERS` | `1:15` ($15 per notebook) |
 | `CLUB_PRICE`, `ANNUAL_PRICE` | `12.00`, `10.00` per notebook — the upsell, see [07-upselling.md](07-upselling.md) |
 | `FREE_SHIPPING_FROM` | `3` |
-| `PUBLIC_URL` | your server's address, e.g. `https://funnel-azul.up.railway.app` — the bot then sends `assets/cuaderno-azul.jpg` automatically |
+| `PUBLIC_URL` | your server's address, e.g. `https://funnel-azul.up.railway.app` — the bot then sends the product photo and the plans card from `assets/` automatically |
 | `PRODUCT_IMAGE_URL` | optional: a different photo link (otherwise it uses the one in `assets/`) |
 | `SHIPPING_COST` | your LAAR rate, e.g. `4.50` |
 | `STORE_ADDRESS`, `STORE_MAPS_URL`, `STORE_HOURS` | your store |

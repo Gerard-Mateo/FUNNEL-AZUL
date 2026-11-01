@@ -79,7 +79,8 @@ src/flow.js        ← the conversation steps + your admin commands
 src/whatsapp.js    ← talks to the WhatsApp Cloud API
 src/server.js      ← webhook server Meta calls
 src/store.js       ← saves chats and orders in data/*.json
-assets/            ← product photo the bot sends (served at /assets/...)
+assets/            ← product photo + plans card (planes.jpg) the bot sends (served at /assets/...)
+scripts/build-plan-image.js ← redraws the plans card with your prices: npm run build:image
 scripts/simulate.js← terminal simulator
 .env.example       ← copy to .env and fill in
 ```

@@ -19,11 +19,14 @@ const flowCode = read('src/flow.js')
   .replace(/^import .*$/gm, '')
   .replace(/^export /gm, '');
 
-const img = 'data:image/jpeg;base64,' + fs.readFileSync(path.join(root, 'assets/cuaderno-thumb.jpg')).toString('base64');
+const dataUri = (file) => 'data:image/jpeg;base64,' + fs.readFileSync(path.join(root, file)).toString('base64');
+const img = dataUri('assets/cuaderno-thumb.jpg');
+const plansImg = dataUri('assets/planes.jpg');
 
 const body = read('scripts/demo-template.html')
   .replace('/*__BOT_CODE__*/', () => `${pricingCode}\n${messagesCode}\n${flowCode}`)
-  .replaceAll('__IMG__', img);
+  .replaceAll('__IMG__', img)
+  .replaceAll('__PLANS_IMG__', plansImg);
 
 const full = `<!doctype html>
 <html lang="es">

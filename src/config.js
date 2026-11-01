@@ -1,7 +1,8 @@
 // All business settings live here. Change them via environment variables (.env)
 // so you never have to touch the code to update a price or an address.
 
-import { parseTiers } from './pricing.js';
+import fs from 'node:fs';
+import { parseTiers, planImageKey } from './pricing.js';
 
 const env = (key, fallback = '') => process.env[key] ?? fallback;
 const money = (key, fallback) => Number.parseFloat(env(key, fallback));
@@ -88,3 +89,17 @@ export const config = {
 
 // Base price = price of 1 notebook (first tier)
 config.product.price = config.pricing[0].unit;
+
+// Plans card shown above the 3 upsell buttons (assets/planes.jpg, made by `npm run build:image`).
+// Used only if it was drawn with the current prices; otherwise the bot sends the text version.
+config.planImageUrl = (() => {
+  if (env('PLAN_IMAGE_URL')) return env('PLAN_IMAGE_URL');
+  if (!config.publicUrl) return '';
+  try {
+    const { key } = JSON.parse(fs.readFileSync(new URL('../assets/planes.json', import.meta.url), 'utf8'));
+    if (key === planImageKey(config)) return `${config.publicUrl}/assets/planes.jpg?v=${encodeURIComponent(key)}`;
+    console.warn('⚠️  assets/planes.jpg has old prices: run `npm run build:image` (sending the text version meanwhile)');
+  } catch {}
+  return '';
+})();
+

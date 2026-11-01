@@ -40,3 +40,15 @@ export function planQuote(plan, months, cfg) {
   const total = round(s.annualPrice * deliveries);
   return { plan, months, deliveries, unit: s.annualPrice, total, savings: round(singleDelivered * deliveries - total) };
 }
+
+// The numbers printed on the plans image (assets/planes.jpg). If any of these change
+// in .env, the image is out of date and the bot falls back to the text version.
+export const planImageKey = (cfg) =>
+  [
+    cfg.product.price,
+    cfg.shippingCost,
+    cfg.freeShippingFrom,
+    cfg.subscription.clubPrice,
+    cfg.subscription.annualPrice,
+    cfg.subscription.defaultMonths,
+  ].join('|');

@@ -42,6 +42,24 @@ export const planOffer = (cfg, retry = false) => {
   const months = cfg.subscription.defaultMonths;
   const club = planQuote('club', months, cfg);
   const annual = cfg.subscription.annualPrice > 0 ? planQuote('annual', months, cfg) : null;
+  const opts = [
+    ['plan_single', `Comprar · ${$short(cfg.product.price)} c/u`],
+    ['plan_club', `⭐ Club · ${$short(club.unit)} c/u`],
+    ...(annual ? [['plan_annual', `💎 Anual · ${$short(annual.total)}`]] : []),
+  ];
+
+  // With the plans card (assets/planes.jpg) the image does the comparing: keep the text short.
+  if (cfg.planImageUrl) {
+    return buttons(
+      (retry ? 'Toca una opción 👇' : '¡Buenísimo! 🙌 Antes de tus datos, mira esto 👀') +
+        `\n\n⭐ Con el *Club* o el *Anual* el envío es *GRATIS* y cada cuaderno te sale más barato. ` +
+        `El Club lo cancelas cuando quieras.` +
+        (cfg.freeShippingFrom ? `\n\n🛍️ En compra única, envío gratis desde ${cfg.freeShippingFrom}.` : ''),
+      opts,
+      cfg.planImageUrl
+    );
+  }
+
   const lines = [
     retry ? 'Toca una opción 👇' : '¡Buenísimo! 🙌 Antes de tus datos, mira esto 👀',
     '',
@@ -51,17 +69,12 @@ export const planOffer = (cfg, retry = false) => {
     `⭐ *Club Azul*: uno nuevo ${freqLabel(months)} a *${$short(club.unit)}*, envío GRATIS.`,
     `Ahorras ${$short(club.savings)} en cada envío y cancelas cuando quieras.`,
   ];
-  const opts = [
-    ['plan_single', `Comprar · ${$short(cfg.product.price)} c/u`],
-    ['plan_club', `⭐ Club · ${$short(club.unit)} c/u`],
-  ];
   if (annual) {
     lines.push(
       '',
       `💎 *Anual*: ${cuadernos(annual.deliveries)} por *${$short(annual.total)}* (${$short(annual.unit)} c/u), un solo pago, envío GRATIS.`,
       `*Ahorras ${$short(annual.savings)}* en el año.`
     );
-    opts.push(['plan_annual', `💎 Anual · ${$short(annual.total)}`]);
   }
   return buttons(lines.join('\n'), opts);
 };

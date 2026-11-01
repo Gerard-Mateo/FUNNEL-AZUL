@@ -2,6 +2,20 @@
 
 El porqué de cada decisión está en [09-estrategia.md](09-estrategia.md).
 
+## La tarjeta de planes
+
+<p align="center"><img src="../assets/planes.jpg" width="360" alt="Tarjeta de planes"></p>
+
+El bot manda esta imagen encima de los 3 botones, con un texto corto debajo. Se genera con **tus precios**:
+
+```
+npm run build:image      # vuelve a dibujar assets/planes.jpg con los precios de .env
+```
+
+Si cambias un precio en `.env` y no la regeneras, el bot **no** manda la imagen vieja: usa la versión de texto (abajo) hasta que la regeneres. Necesita `PUBLIC_URL` configurado. Si no puedes correr el comando, pídeselo a Claude con los precios nuevos.
+
+## Versión de texto (sin imagen)
+
 ```
 ¡Buenísimo! 🙌 Antes de tus datos, mira esto 👀
 
