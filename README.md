@@ -50,6 +50,14 @@ At any moment the customer can type **asesor** to talk to you (the bot goes quie
 
 ## Try the bot right now (no Meta account needed)
 
+**From your phone:** open the chat simulator, `docs/demo/index.html`. It runs the real bot code in the browser
+(customer tab + your "owner" tab with alerts and commands). To host it with **GitHub Pages**: repo
+→ Settings → Pages → Source "Deploy from a branch" → branch `main`, folder `/docs` → Save. After about a minute it is at
+`https://<your-user>.github.io/FUNNEL-AZUL/demo/`. (Pages on a private repo needs a paid GitHub plan.)
+After editing `src/messages.js` or `src/flow.js`, run `npm run build:demo` to refresh it.
+
+**From a computer:**
+
 ```bash
 npm run simulate     # chat with the bot in your terminal
 npm test             # automatic tests of the whole flow

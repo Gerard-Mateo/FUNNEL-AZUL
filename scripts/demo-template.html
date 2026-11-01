@@ -1,0 +1,403 @@
+<title>Cuaderno Azul Chat</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Figtree:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: one phone-width chat column, cover-navy header, kraft-paper chat ground (from the product photo). */
+:root {
+  --navy: #1b2f5e;
+  --navy-ink: #f3ece0;
+  --ground: #ece2d2;
+  --ground-dots: #ddd0bb;
+  --bubble-in: #fffdf8;
+  --bubble-out: #d9e2f3;
+  --fg: #1d2333;
+  --muted: #6b6a73;
+  --line: #d6cab6;
+  --btn: #ffffff;
+  --btn-fg: #24447f;
+  --owner: #2f6b4f;
+  --shell: #e4dccd;
+  --font-brand: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --font-body: "Figtree", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --navy: #14234a; --navy-ink: #efe6d6; --ground: #10172a; --ground-dots: #172038;
+    --bubble-in: #1d2741; --bubble-out: #2a3f6e; --fg: #e9e6ee; --muted: #9aa0b4;
+    --line: #2a3553; --btn: #1d2741; --btn-fg: #a9c1f2; --owner: #6fc39b; --shell: #0b1020;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --navy: #14234a; --navy-ink: #efe6d6; --ground: #10172a; --ground-dots: #172038;
+  --bubble-in: #1d2741; --bubble-out: #2a3f6e; --fg: #e9e6ee; --muted: #9aa0b4;
+  --line: #2a3553; --btn: #1d2741; --btn-fg: #a9c1f2; --owner: #6fc39b; --shell: #0b1020;
+  color-scheme: dark;
+}
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  background: var(--shell); color: var(--fg); font-family: var(--font-body); font-size: 15px;
+  display: flex; justify-content: center;
+}
+.app {
+  width: 100%; max-width: 480px; height: 100%; display: flex; flex-direction: column;
+  background: var(--ground); position: relative; overflow: hidden;
+}
+@media (min-width: 520px) { .app { box-shadow: 0 0 0 1px var(--line); } }
+
+header {
+  background: var(--navy); color: var(--navy-ink);
+  padding-block: 10px 0;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex; flex-direction: column; gap: 10px;
+}
+.who { display: flex; align-items: center; gap: 12px; }
+.avatar {
+  width: 40px; height: 40px; border-radius: 50%; flex: none; overflow: hidden;
+  background: var(--navy-ink); border: 1px solid color-mix(in srgb, var(--navy-ink) 40%, transparent);
+}
+.avatar img { width: 100%; height: 100%; object-fit: cover; }
+.who-text { min-width: 0; flex: 1; }
+.who-name { font-family: var(--font-brand); font-size: 16px; font-weight: 500; letter-spacing: 0.02em; }
+.who-sub { font-size: 12.5px; opacity: 0.75; }
+.reset {
+  font: inherit; font-size: 13px; color: var(--navy-ink); background: transparent; cursor: pointer;
+  border: 1px solid color-mix(in srgb, var(--navy-ink) 45%, transparent); border-radius: 999px; padding: 6px 12px;
+}
+.tabs { display: flex; }
+.tab {
+  flex: 1; font: inherit; font-size: 14px; font-weight: 600; color: var(--navy-ink); opacity: 0.6;
+  background: none; border: 0; border-bottom: 3px solid transparent; padding: 8px 4px 9px; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+}
+.tab[aria-selected="true"] { opacity: 1; border-bottom-color: var(--navy-ink); }
+.badge {
+  min-width: 20px; height: 20px; border-radius: 10px; padding: 0 6px; font-size: 12px; line-height: 20px;
+  background: var(--owner); color: #fff;
+}
+:focus-visible { outline: 2px solid var(--btn-fg); outline-offset: 2px; }
+header :focus-visible { outline-color: var(--navy-ink); }
+
+.chat {
+  flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 6px;
+  padding-block: 14px;
+  padding-left: max(12px, env(safe-area-inset-left, 0px));
+  padding-right: max(12px, env(safe-area-inset-right, 0px));
+  background-color: var(--ground);
+  background-image: radial-gradient(var(--ground-dots) 1px, transparent 1.2px);
+  background-size: 22px 22px;
+}
+.note {
+  align-self: center; text-align: center; font-size: 12.5px; color: var(--muted); max-width: 34ch;
+  background: var(--bubble-in); border-radius: 8px; padding: 6px 10px; margin-block: 4px 8px;
+}
+.msg { display: flex; flex-direction: column; max-width: 84%; gap: 4px; }
+.msg.in { align-self: flex-start; }
+.msg.out { align-self: flex-end; }
+.bubble {
+  background: var(--bubble-in); border-radius: 4px 12px 12px 12px; padding: 8px 10px 6px;
+  line-height: 1.42; white-space: pre-wrap; overflow-wrap: anywhere;
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--fg) 10%, transparent);
+}
+.msg.out .bubble { background: var(--bubble-out); border-radius: 12px 4px 12px 12px; }
+.bubble img { display: block; border-radius: 8px; margin: -4px -6px 8px; max-width: calc(100% + 12px); }
+.bubble a { color: var(--btn-fg); }
+.time { display: block; text-align: right; font-size: 11px; color: var(--muted); margin-top: 2px; }
+.receipt {
+  width: 150px; height: 90px; border-radius: 8px; margin-bottom: 4px;
+  background: repeating-linear-gradient(0deg, color-mix(in srgb, var(--fg) 8%, transparent) 0 8px, transparent 8px 16px), var(--bubble-in);
+  display: grid; place-items: center; font-size: 13px; color: var(--muted);
+}
+.btns { display: flex; flex-direction: column; gap: 4px; }
+.btns button {
+  font: inherit; font-weight: 600; font-size: 14.5px; color: var(--btn-fg); background: var(--btn);
+  border: 0; border-radius: 10px; padding: 10px; cursor: pointer;
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--fg) 10%, transparent);
+}
+.btns button:disabled { opacity: 0.55; cursor: default; }
+.typing { align-self: flex-start; background: var(--bubble-in); border-radius: 12px; padding: 10px 14px; display: flex; gap: 4px; }
+.typing span { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); animation: blink 1s infinite; }
+.typing span:nth-child(2) { animation-delay: .15s } .typing span:nth-child(3) { animation-delay: .3s }
+@keyframes blink { 0%, 100% { opacity: .25 } 50% { opacity: 1 } }
+@media (prefers-reduced-motion: reduce) { .typing span { animation: none; opacity: .6; } }
+
+.hints {
+  display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none;
+  padding-block: 8px 0;
+  padding-left: max(12px, env(safe-area-inset-left, 0px));
+  padding-right: max(12px, env(safe-area-inset-right, 0px));
+}
+.hints button {
+  flex: none; font: inherit; font-size: 13px; color: var(--fg); background: var(--bubble-in);
+  border: 1px solid var(--line); border-radius: 999px; padding: 5px 11px; cursor: pointer;
+}
+form.compose {
+  display: flex; gap: 8px; align-items: center;
+  padding-block: 8px calc(8px + env(safe-area-inset-bottom, 0px));
+  padding-left: max(10px, env(safe-area-inset-left, 0px));
+  padding-right: max(10px, env(safe-area-inset-right, 0px));
+}
+.compose input {
+  flex: 1; min-width: 0; font: inherit; font-size: 16px; color: var(--fg); background: var(--bubble-in);
+  border: 1px solid var(--line); border-radius: 22px; padding: 10px 14px;
+}
+.icon-btn {
+  flex: none; width: 44px; height: 44px; border-radius: 50%; border: 0; cursor: pointer;
+  display: grid; place-items: center; font-size: 18px;
+}
+.icon-btn.photo { background: var(--bubble-in); color: var(--fg); border: 1px solid var(--line); }
+.icon-btn.send { background: var(--navy); color: var(--navy-ink); }
+.icon-btn svg { width: 20px; height: 20px; }
+</style>
+
+<div class="app">
+  <header>
+    <div class="who">
+      <div class="avatar"><img src="__IMG__" alt=""></div>
+      <div class="who-text">
+        <div class="who-name">el cuaderno azul</div>
+        <div class="who-sub" id="sub">bot de ventas · demo</div>
+      </div>
+      <button class="reset" id="reset" type="button">Reiniciar</button>
+    </div>
+    <div class="tabs" role="tablist">
+      <button class="tab" role="tab" id="tab-customer" aria-selected="true" type="button">Cliente</button>
+      <button class="tab" role="tab" id="tab-owner" aria-selected="false" type="button">Tú (dueño) <span class="badge" id="badge" hidden>0</span></button>
+    </div>
+  </header>
+
+  <main class="chat" id="chat-customer" aria-live="polite">
+    <div class="note">Así lo ve tu cliente después de tocar tu anuncio. Toca los botones o escribe como cliente.</div>
+  </main>
+  <main class="chat" id="chat-owner" aria-live="polite" hidden>
+    <div class="note">Esto llega a TU WhatsApp. Responde con comandos, por ejemplo <b>pagado AZ…</b></div>
+  </main>
+
+  <div class="hints" id="hints"></div>
+  <form class="compose" id="compose">
+    <button class="icon-btn photo" id="photo" type="button" aria-label="Enviar foto del comprobante" title="Enviar foto del comprobante">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
+    </button>
+    <input id="input" autocomplete="off" placeholder="Escribe un mensaje" aria-label="Mensaje">
+    <button class="icon-btn send" type="submit" aria-label="Enviar">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 20.5 21 12 3 3.5l2.5 7L15 12l-9.5 1.5z"/></svg>
+    </button>
+  </form>
+</div>
+
+<script>
+/* ---- Bot code: generated from src/messages.js and src/flow.js by scripts/build-demo.js ---- */
+/*__BOT_CODE__*/
+
+/* ---- Demo settings (in the real bot these come from .env) ---- */
+const config = {
+  ownerPhone: '593990000000',
+  product: {
+    name: 'El Cuaderno Azul',
+    description: 'Tapa dura azul, minimalista y con cinta marcapáginas. Simple y hermoso 💙',
+    price: 15,
+    imageUrl: '__IMG__',
+  },
+  shippingCost: 4.5,
+  deliveryDays: '1 a 3 días hábiles',
+  store: { address: 'Av. Ejemplo N00-00 y Calle Ejemplo, Quito', mapsUrl: 'https://maps.google.com/?q=Quito', hours: 'Lunes a sábado, 10:00 a 19:00' },
+  deunaQrUrl: '',
+  deunaPhone: '0990000000',
+  bank: { name: 'Banco Pichincha', accountType: 'Ahorros', accountNumber: '2200000000', holder: 'Tu nombre', holderId: '1700000000', email: '' },
+};
+const CUSTOMER = '593981234567';
+
+/* ---- In-memory store ---- */
+const sessions = {}, orders = {};
+const store = {
+  getSession: (p) => sessions[p],
+  saveSession: (s) => { sessions[s.phone] = s; },
+  findOrder: (id = '') => orders[id.toUpperCase()],
+  listOrders: () => Object.values(orders),
+  saveOrder: (o) => { orders[o.id] = { ...o }; },
+};
+let session = newSession(CUSTOMER);
+store.saveSession(session);
+
+/* ---- UI ---- */
+const byId = (id) => document.getElementById(id);
+const chats = { customer: byId('chat-customer'), owner: byId('chat-owner') };
+let view = 'customer';
+let unread = 0;
+
+const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const format = (s) =>
+  esc(s)
+    .replace(/\*([^*\n]+)\*/g, '<strong>$1</strong>')
+    .replace(/(https?:\/\/[^\s<]+|wa\.me\/\d+)/g, (u) => `<a href="${u.startsWith('http') ? u : 'https://' + u}" target="_blank" rel="noopener">${u}</a>`);
+const now = () => new Date().toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit' });
+
+function scroll(el) { el.scrollTop = el.scrollHeight; }
+
+function addBubble(where, dir, html, buttons) {
+  const wrap = document.createElement('div');
+  wrap.className = `msg ${dir}`;
+  wrap.innerHTML = `<div class="bubble">${html}<span class="time">${now()}</span></div>`;
+  if (buttons?.length) {
+    const b = document.createElement('div');
+    b.className = 'btns';
+    for (const btn of buttons) {
+      const el = document.createElement('button');
+      el.type = 'button';
+      el.textContent = btn.title;
+      el.addEventListener('click', () => {
+        b.querySelectorAll('button').forEach((x) => (x.disabled = true));
+        customerSends({ buttonId: btn.id, text: btn.title }, btn.title);
+      });
+      b.appendChild(el);
+    }
+    wrap.appendChild(b);
+  }
+  chats[where].appendChild(wrap);
+  scroll(chats[where]);
+}
+
+function render(where, msg) {
+  if (msg.type === 'forward_image') {
+    addBubble(where, 'in', `<div class="receipt">📷 comprobante</div>${format(msg.caption)}`);
+  } else if (msg.type === 'image') {
+    addBubble(where, 'in', `<img src="${esc(msg.link)}" alt="">${format(msg.caption || '')}`);
+  } else if (msg.type === 'buttons') {
+    const img = msg.headerImage ? `<img src="${esc(msg.headerImage)}" alt="El Cuaderno Azul">` : '';
+    addBubble(where, 'in', img + format(msg.text), msg.buttons);
+  } else {
+    addBubble(where, 'in', format(msg.text));
+  }
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function deliver(out) {
+  for (const { to, msg } of out) {
+    const where = to === config.ownerPhone ? 'owner' : 'customer';
+    const typing = document.createElement('div');
+    typing.className = 'typing';
+    typing.innerHTML = '<span></span><span></span><span></span>';
+    chats[where].appendChild(typing);
+    scroll(chats[where]);
+    await sleep(where === view ? 550 : 150);
+    typing.remove();
+    render(where, msg);
+    if (where === 'owner' && view !== 'owner') { unread++; updateBadge(); }
+  }
+  updateHints();
+}
+
+let busy = false;
+async function customerSends(incoming, shown) {
+  if (busy) return;
+  busy = true;
+  addBubble('customer', 'out', shown);
+  const r = handleCustomer(session, incoming, { config, store });
+  session = r.session;
+  store.saveSession(session);
+  await deliver(r.out);
+  busy = false;
+}
+
+async function ownerSends(text) {
+  if (busy) return;
+  busy = true;
+  addBubble('owner', 'out', format(text));
+  const out = isOwnerCommand(text)
+    ? handleOwner(text, { config, store })
+    : [{ to: config.ownerPhone, msg: plain('Escribe un comando. Toca "comandos" para ver la lista.') }];
+  session = store.getSession(CUSTOMER) ?? session;
+  await deliver(out);
+  busy = false;
+}
+
+function updateBadge() {
+  byId('badge').hidden = unread === 0;
+  byId('badge').textContent = unread;
+}
+
+function setView(v) {
+  view = v;
+  byId('tab-customer').setAttribute('aria-selected', v === 'customer');
+  byId('tab-owner').setAttribute('aria-selected', v === 'owner');
+  chats.customer.hidden = v !== 'customer';
+  chats.owner.hidden = v !== 'owner';
+  byId('photo').hidden = v !== 'customer';
+  byId('input').placeholder = v === 'customer' ? 'Escribe como cliente' : 'Escribe un comando';
+  byId('sub').textContent = v === 'customer' ? 'bot de ventas · demo' : 'tu WhatsApp personal · demo';
+  if (v === 'owner') { unread = 0; updateBadge(); }
+  updateHints();
+  scroll(chats[v]);
+}
+
+function hint(label, action) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.textContent = label;
+  b.addEventListener('click', action);
+  return b;
+}
+
+function updateHints() {
+  const h = byId('hints');
+  h.replaceChildren();
+  if (view === 'customer') {
+    if (session.state === 'RECEIPT') h.append(hint('📷 Enviar comprobante', sendPhoto));
+    if (session.state === 'D_NAME' || session.state === 'P_NAME') h.append(hint('María Pérez', () => customerSends({ text: 'María Pérez' }, 'María Pérez')));
+    if (session.state === 'D_ID') h.append(hint('1712345678', () => customerSends({ text: '1712345678' }, '1712345678')));
+    if (session.state === 'D_CITY') h.append(hint('Quito', () => customerSends({ text: 'Quito' }, 'Quito')));
+    if (session.state === 'D_ADDRESS') {
+      const a = 'Av. Amazonas N34 y Rusia, casa azul, frente al parque';
+      h.append(hint('Usar dirección de ejemplo', () => customerSends({ text: a }, esc(a))));
+    }
+    if (session.state !== 'HUMAN' && session.state !== 'START') h.append(hint('asesor', () => customerSends({ text: 'asesor' }, 'asesor')));
+    if (session.state === 'HUMAN') h.append(hint('reiniciar', () => customerSends({ text: 'reiniciar' }, 'reiniciar')));
+  } else {
+    const pending = store.listOrders().filter((o) => o.status === 'verifying');
+    for (const o of pending) h.append(hint(`pagado ${o.id}`, () => ownerSends(`pagado ${o.id}`)));
+    for (const o of store.listOrders().filter((o) => o.status === 'paid' && o.method === 'delivery'))
+      h.append(hint(`guia ${o.id} 0012345`, () => ownerSends(`guia ${o.id} 0012345`)));
+    if (session.state === 'HUMAN') {
+      h.append(hint('responder…', () => ownerSends(`responder ${CUSTOMER} ¡Hola! Te ayudo por aquí 😊`)));
+      h.append(hint(`bot ${CUSTOMER}`, () => ownerSends(`bot ${CUSTOMER}`)));
+    }
+    h.append(hint('pedidos', () => ownerSends('pedidos')), hint('comandos', () => ownerSends('comandos')));
+  }
+  h.hidden = h.children.length === 0;
+}
+
+function sendPhoto() {
+  customerSends({ imageId: 'DEMO_' + Date.now() }, '<div class="receipt">📷 comprobante</div>');
+}
+
+byId('photo').addEventListener('click', sendPhoto);
+byId('tab-customer').addEventListener('click', () => setView('customer'));
+byId('tab-owner').addEventListener('click', () => setView('owner'));
+byId('compose').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const text = byId('input').value.trim();
+  if (!text) return;
+  byId('input').value = '';
+  if (view === 'customer') customerSends({ text }, esc(text));
+  else ownerSends(text);
+});
+byId('reset').addEventListener('click', () => {
+  for (const k of Object.keys(orders)) delete orders[k];
+  session = newSession(CUSTOMER);
+  store.saveSession(session);
+  for (const c of Object.values(chats)) c.querySelectorAll('.msg, .typing').forEach((m) => m.remove());
+  unread = 0; updateBadge();
+  setView('customer');
+  start();
+});
+
+function start() {
+  customerSends({ text: '¡Hola! Quiero el cuaderno azul 💙', referral: { source_id: 'DEMO_AD' } }, '¡Hola! Quiero el cuaderno azul 💙');
+}
+setView('customer');
+start();
+</script>
