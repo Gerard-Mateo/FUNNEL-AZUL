@@ -127,6 +127,7 @@ header :focus-visible { outline-color: var(--navy-ink); }
 .btns.rows .r-title { color: var(--fg); font-weight: 600; }
 .btns.rows .r-desc { color: var(--muted); font-weight: 400; font-size: 13px; line-height: 1.3; }
 .btns.rows button.pick { box-shadow: 0 0 0 2px var(--btn-fg); }
+.tpl-tag { font-size: 12px; font-weight: 600; color: var(--muted); letter-spacing: 0.02em; margin-bottom: 4px; }
 .typing { align-self: flex-start; background: var(--bubble-in); border-radius: 12px; padding: 10px 14px; display: flex; gap: 4px; }
 .typing span { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); animation: blink 1s infinite; }
 .typing span:nth-child(2) { animation-delay: .15s } .typing span:nth-child(3) { animation-delay: .3s }
@@ -210,7 +211,8 @@ const config = {
     price: 15,
     imageUrl: '__IMG__',
   },
-  pricing: parseTiers('1:15,2:13.5,3:12,5:11'),
+  pricing: parseTiers('1:15,3:12'),
+  subscription: { price: 13, reminderDaysBefore: 3, reminderTemplate: 'recordatorio_suscripcion', templateLang: 'es' },
   freeShippingFrom: 3,
   maxQty: 20,
   shippingCost: 4.5,
@@ -223,13 +225,16 @@ const config = {
 const CUSTOMER = '593981234567';
 
 /* ---- In-memory store ---- */
-const sessions = {}, orders = {};
+const sessions = {}, orders = {}, subs = {};
 const store = {
   getSession: (p) => sessions[p],
   saveSession: (s) => { sessions[s.phone] = s; },
   findOrder: (id = '') => orders[id.toUpperCase()],
   listOrders: () => Object.values(orders),
   saveOrder: (o) => { orders[o.id] = { ...o }; },
+  findSubscription: (id = '') => subs[id.toUpperCase()],
+  listSubscriptions: () => Object.values(subs),
+  saveSubscription: (s) => { subs[s.id] = { ...s }; },
 };
 let session = newSession(CUSTOMER);
 store.saveSession(session);
@@ -285,6 +290,8 @@ function render(where, msg) {
     addBubble(where, 'in', `<div class="receipt">📷 comprobante</div>${format(msg.caption)}`);
   } else if (msg.type === 'image') {
     addBubble(where, 'in', `<img src="${esc(msg.link)}" alt="">${format(msg.caption || '')}`);
+  } else if (msg.type === 'template') {
+    addBubble(where, 'in', `<div class="tpl-tag">🔔 Recordatorio automático</div>${format(msg.text)}`, msg.buttons);
   } else if (msg.type === 'list') {
     addBubble(where, 'in', format(msg.text), msg.rows, msg.button);
   } else if (msg.type === 'buttons') {
@@ -383,6 +390,10 @@ function updateHints() {
     for (const o of pending) h.append(hint(`pagado ${o.id}`, () => ownerSends(`pagado ${o.id}`)));
     for (const o of store.listOrders().filter((o) => o.status === 'paid' && o.method === 'delivery'))
       h.append(hint(`guia ${o.id} 0012345`, () => ownerSends(`guia ${o.id} 0012345`)));
+    for (const s of store.listSubscriptions().filter((s) => s.status === 'active')) {
+      h.append(hint(`⏩ Saltar al próximo envío`, () => simulateReminder(s)));
+    }
+    if (store.listSubscriptions().length) h.append(hint('suscripciones', () => ownerSends('suscripciones')));
     if (session.state === 'HUMAN') {
       h.append(hint('responder…', () => ownerSends(`responder ${CUSTOMER} ¡Hola! Te ayudo por aquí 😊`)));
       h.append(hint(`bot ${CUSTOMER}`, () => ownerSends(`bot ${CUSTOMER}`)));
@@ -390,6 +401,18 @@ function updateHints() {
     h.append(hint('pedidos', () => ownerSends('pedidos')), hint('comandos', () => ownerSends('comandos')));
   }
   h.hidden = h.children.length === 0;
+}
+
+// Demo only: pretend time passed until 3 days before the next delivery.
+async function simulateReminder(sub) {
+  if (busy) return;
+  busy = true;
+  const [y, m, d] = sub.nextShipDate.split('-').map(Number);
+  const day = new Date(Date.UTC(y, m - 1, d - config.subscription.reminderDaysBefore)).toISOString().slice(0, 10);
+  addBubble('owner', 'out', `⏩ <em>Pasa el tiempo… hoy es ${formatDate(day)}</em>`);
+  await deliver(subscriptionReminders(day, { config, store }));
+  busy = false;
+  setView('customer');
 }
 
 function sendPhoto() {
@@ -409,6 +432,7 @@ byId('compose').addEventListener('submit', (e) => {
 });
 byId('reset').addEventListener('click', () => {
   for (const k of Object.keys(orders)) delete orders[k];
+  for (const k of Object.keys(subs)) delete subs[k];
   session = newSession(CUSTOMER);
   store.saveSession(session);
   for (const c of Object.values(chats)) c.querySelectorAll('.msg, .typing').forEach((m) => m.remove());

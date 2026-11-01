@@ -10,7 +10,8 @@ import { fileURLToPath } from 'node:url';
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
 
-const pricingCode = read('src/pricing.js').replace(/^export /gm, '');
+const strip = (code) => code.replace(/^import .*$/gm, '').replace(/^export /gm, '');
+const pricingCode = strip(read('src/pricing.js')) + '\n' + strip(read('src/subscriptions.js'));
 const messages = read('src/messages.js');
 const exported = [...messages.matchAll(/^export const (\w+)/gm)].map((m) => m[1]);
 const messagesCode = messages.replace(/^import .*$/gm, '').replace(/^export /gm, '') + `\nconst M = { ${exported.join(', ')} };\n`;

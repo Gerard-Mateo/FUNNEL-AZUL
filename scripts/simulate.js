@@ -4,10 +4,11 @@
 // To "send a receipt photo", type: /foto
 // Owner commands (pagado, guia, ...) also work here: start the line with "owner:"
 //   owner: pagado AZ1234
+// Simulate a subscription reminder for a date: /recordatorio 2027-01-01
 
 import readline from 'node:readline';
 import { config } from '../src/config.js';
-import { handleCustomer, handleOwner, newSession } from '../src/flow.js';
+import { handleCustomer, handleOwner, newSession, subscriptionReminders } from '../src/flow.js';
 import { createStore } from '../src/store.js';
 import os from 'node:os';
 import path from 'node:path';
@@ -28,6 +29,10 @@ const show = (out) => {
       if (to === phone) lastButtons = msg.buttons;
       msg.buttons.forEach((b, i) => console.log(`   [${i + 1}] ${b.title}`));
     }
+    if (msg.type === 'template') {
+      if (to === phone) lastButtons = msg.buttons;
+      msg.buttons.forEach((b, i) => console.log(`   [${i + 1}] ${b.title}`));
+    }
     if (msg.type === 'list') {
       if (to === phone) lastButtons = msg.rows;
       console.log(`   ☰ ${msg.button}`);
@@ -44,6 +49,11 @@ prompt();
 for await (const raw of rl) {
   const line = raw.trim();
   if (!process.stdin.isTTY) console.log(line);
+  if (line.startsWith('/recordatorio')) {
+    show(subscriptionReminders(line.split(' ')[1], { config: { ...config, ownerPhone: config.ownerPhone || 'OWNER' }, store }));
+    prompt();
+    continue;
+  }
   if (line.startsWith('owner:')) {
     store.saveSession(session);
     show(handleOwner(line.slice(6).trim(), { config: { ...config, ownerPhone: config.ownerPhone || 'OWNER' }, store }));

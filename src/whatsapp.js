@@ -49,6 +49,26 @@ export function createWhatsApp({ whatsappToken, phoneNumberId, graphVersion }) {
             },
           },
         };
+      // Approved template (needed to write first, outside the 24-hour window).
+      // Body variables {{1}}, {{2}}... = msg.params; quick-reply buttons carry msg.buttons[i].id as payload.
+      case 'template':
+        return {
+          ...base,
+          type: 'template',
+          template: {
+            name: msg.name,
+            language: { code: msg.lang },
+            components: [
+              { type: 'body', parameters: msg.params.map((p) => ({ type: 'text', text: String(p) })) },
+              ...msg.buttons.map((b, i) => ({
+                type: 'button',
+                sub_type: 'quick_reply',
+                index: String(i),
+                parameters: [{ type: 'payload', payload: b.id }],
+              })),
+            ],
+          },
+        };
       case 'list':
         return {
           ...base,

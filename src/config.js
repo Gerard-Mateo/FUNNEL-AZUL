@@ -38,12 +38,22 @@ export const config = {
   },
 
   // --- Volume pricing (upselling) ---
-  // "min:unitPrice" pairs. Default: 1 = $15 · 2+ = $13.50 c/u · 3+ = $12 c/u · 5+ = $11 c/u
-  pricing: parseTiers(env('PRICE_TIERS', '1:15,2:13.5,3:12,5:11')),
+  // "min:unitPrice" pairs. Default: 1 = $15 · pack of 3+ = $12 c/u
+  // The second tier is offered as the "pack" button.
+  pricing: parseTiers(env('PRICE_TIERS', '1:15,3:12')),
   // Free LAAR delivery from this many notebooks (0 = never free)
   freeShippingFrom: Number.parseInt(env('FREE_SHIPPING_FROM', '3'), 10),
   // Above this, the chat goes to a person for a wholesale price
   maxQty: Number.parseInt(env('MAX_QTY', '20'), 10),
+
+  // --- Subscription: one notebook delivered every 1 or 2 months ---
+  subscription: {
+    price: money('SUB_PRICE', '13.00'), // per delivery, LAAR shipping included
+    reminderDaysBefore: Number.parseInt(env('SUB_REMINDER_DAYS', '3'), 10),
+    // WhatsApp template (create it in WhatsApp Manager, see docs/08-suscripcion.md)
+    reminderTemplate: env('SUB_REMINDER_TEMPLATE', 'recordatorio_suscripcion'),
+    templateLang: env('SUB_TEMPLATE_LANG', 'es'),
+  },
 
   // --- Delivery (LAAR Courier) ---
   shippingCost: money('SHIPPING_COST', '4.50'),

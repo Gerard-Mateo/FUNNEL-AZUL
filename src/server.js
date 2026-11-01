@@ -8,7 +8,8 @@ import path from 'node:path';
 import { config } from './config.js';
 import { createStore } from './store.js';
 import { createWhatsApp, parseIncoming } from './whatsapp.js';
-import { handleCustomer, handleOwner, isOwnerCommand, newSession } from './flow.js';
+import { handleCustomer, handleOwner, isOwnerCommand, newSession, subscriptionReminders } from './flow.js';
+import { todayEC } from './subscriptions.js';
 
 const store = createStore(config.dataDir);
 const wa = createWhatsApp(config);
@@ -23,6 +24,24 @@ function validSignature(raw, header) {
   const b = Buffer.from(header);
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
+
+async function sendAll(out) {
+  for (const { to, msg } of out) {
+    try {
+      await wa.send(to, msg); // sequential so messages arrive in order
+    } catch (err) {
+      console.error(`Send to ${to} failed:`, err.message);
+    }
+  }
+}
+
+// Subscription payment reminders: checked every hour.
+function runReminders() {
+  const out = subscriptionReminders(todayEC(), { config, store });
+  if (out.length) sendAll(out);
+}
+setInterval(runReminders, 60 * 60 * 1000);
+setTimeout(runReminders, 10 * 1000);
 
 async function processMessage(raw) {
   const incoming = parseIncoming(raw);
@@ -41,13 +60,7 @@ async function processMessage(raw) {
     store.saveSession(session);
   }
 
-  for (const { to, msg } of out) {
-    try {
-      await wa.send(to, msg); // sequential so messages arrive in order
-    } catch (err) {
-      console.error(`Send to ${to} failed:`, err.message);
-    }
-  }
+  await sendAll(out);
 }
 
 const server = http.createServer((req, res) => {

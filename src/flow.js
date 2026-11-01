@@ -1,23 +1,29 @@
 // The sales conversation, as a state machine.
 //
-//   ad click -> product + "¿lo quieres?" -> cantidad -> [upsell: ¿llevas uno más?] -> envío o retiro
-//     envío  -> nombre -> cédula -> ciudad -> dirección -> resumen
-//     retiro -> nombre -> resumen (con dirección de la tienda)
+//   ad click -> product: [Lo quiero] [Suscripción] [Pregunta]
+//     compra      -> cantidad: [1] [Pack de 3] [Otra] -> envío o retiro
+//                      envío  -> nombre -> cédula -> ciudad -> dirección -> resumen
+//                      retiro -> nombre -> resumen (con dirección de la tienda)
+//     suscripción -> [cada mes] [cada 2 meses] -> nombre -> cédula -> ciudad -> dirección -> resumen
 //   resumen -> método de pago (DeUna / transferencia) -> comprobante -> verificación
 //
-// This file never talks to WhatsApp directly. `handleCustomer` and `handleOwner`
-// return a list of outgoing messages ({ to, msg }) and the server sends them.
-// That keeps the logic easy to test (see test/flow.test.js).
+//   Subscriptions: a few days before each delivery the server sends a payment
+//   reminder (subscriptionReminders); the customer taps "Pagar envío" and pays.
+//
+// This file never talks to WhatsApp directly. It returns outgoing messages
+// ({ to, msg }) and the server sends them. That keeps it easy to test.
 
 import * as M from './messages.js';
-import { quote, nextUpgrade, shippingGap } from './pricing.js';
+import { quote } from './pricing.js';
+import { addMonths, dueForReminder, todayEC } from './subscriptions.js';
 
 export const S = {
   START: 'START',
   CONFIRM_PRODUCT: 'CONFIRM_PRODUCT',
   QTY: 'QTY',
   QTY_CUSTOM: 'QTY_CUSTOM',
-  UPSELL: 'UPSELL',
+  SUB_FREQ: 'SUB_FREQ',
+  SUB_CANCEL: 'SUB_CANCEL',
   METHOD: 'METHOD',
   D_NAME: 'D_NAME',
   D_ID: 'D_ID',
@@ -62,12 +68,17 @@ const YES = /^(si|sii+|sip|ok|okay|dale|claro|de una|lo quiero|quiero|me interes
 const NO = /^(no|nop|nel|todavia no|aun no)\b/;
 const WANTS_HUMAN = /\b(asesor|asesora|humano|persona|ayuda|hablar con alguien)\b/;
 const RESTART = /^(reiniciar|empezar|menu|inicio)$/;
+const CANCEL_SUB = /^cancelar( mi| la)?( suscripcion)?$/;
 
 export const totals = (order, cfg) => quote(order.qty ?? 1, order.method, cfg);
 
+const shortId = (prefix) =>
+  prefix + Date.now().toString(36).slice(-4).toUpperCase() + Math.floor(Math.random() * 10);
+const newOrderId = () => shortId('AZ');
+const newSubId = () => shortId('SUB');
 
-const newOrderId = () =>
-  'AZ' + Date.now().toString(36).slice(-4).toUpperCase() + Math.floor(Math.random() * 10);
+const activeSub = (store, phone) =>
+  store?.listSubscriptions?.().find((s) => s.phone === phone && s.status === 'active');
 
 /**
  * @param session  the customer's saved session (mutated and returned)
@@ -82,6 +93,8 @@ export function handleCustomer(session, incoming, { config: cfg, store }) {
     cfg.ownerPhone && msgs.forEach((msg) => out.push({ to: cfg.ownerPhone, msg }));
   const go = (state) => (session.state = state);
   const text = (incoming.text ?? '').trim();
+  const isSub = () => session.order.kind === 'subscription';
+  const showSummary = () => reply(isSub() ? M.subSummary(session.order, cfg) : M.summary(session.order, cfg));
 
   if (incoming.referral && !session.adId) session.adId = incoming.referral.source_id;
 
@@ -97,6 +110,47 @@ export function handleCustomer(session, incoming, { config: cfg, store }) {
     return { session, out };
   }
 
+  // Subscription reminder buttons ("Pagar envío" / "Cancelar suscripción")
+  const btn = incoming.buttonId ?? '';
+  if (btn.startsWith('sub_pay_')) {
+    const sub = store.findSubscription(btn.slice('sub_pay_'.length));
+    if (!sub || sub.status !== 'active') {
+      reply(M.plain('No encontré una suscripción activa 🤔 Escribe *asesor* y te ayudamos.'));
+      return { session, out };
+    }
+    session.order = {
+      id: newOrderId(),
+      kind: 'subscription',
+      subId: sub.id,
+      renewal: true,
+      months: sub.months,
+      qty: 1,
+      method: 'delivery',
+      name: sub.name,
+      cedula: sub.cedula,
+      city: sub.city,
+      address: sub.address,
+      unit: sub.price,
+      subtotal: sub.price,
+      savings: 0,
+      shipping: 0,
+      total: sub.price,
+      phone: session.phone,
+      status: 'awaiting_payment',
+      createdAt: new Date().toISOString(),
+    };
+    store.saveOrder(session.order);
+    reply(M.askPayment(session.order));
+    go(S.PAYMENT);
+    return { session, out };
+  }
+  const sub = activeSub(store, session.phone);
+  if (sub && session.state !== S.SUB_CANCEL && (btn.startsWith('sub_cancel_') || CANCEL_SUB.test(norm(text)))) {
+    reply(M.askCancelSub(sub));
+    go(S.SUB_CANCEL);
+    return { session, out };
+  }
+
   switch (session.state) {
     case S.START: {
       reply(M.productOffer(cfg));
@@ -105,10 +159,13 @@ export function handleCustomer(session, incoming, { config: cfg, store }) {
     }
 
     case S.CONFIRM_PRODUCT: {
-      const c = pick(incoming, { yes: YES, question: NO });
+      const c = pick(incoming, { sub: /suscri/, yes: YES, question: /^(no|pregunta|tengo una pregunta)/ });
       if (c === 'yes') {
         reply(M.askQty(cfg));
         go(S.QTY);
+      } else if (c === 'sub') {
+        reply(M.subOffer(cfg));
+        go(S.SUB_FREQ);
       } else if (c === 'question') {
         go(S.HUMAN);
         reply(M.handoffToHuman());
@@ -121,13 +178,13 @@ export function handleCustomer(session, incoming, { config: cfg, store }) {
 
     case S.QTY:
     case S.QTY_CUSTOM: {
-      if (incoming.buttonId === 'qty_more') {
+      if (pick(incoming, { qty_more: /^(otra|otra cantidad|mas)$/ })) {
         reply(M.askQtyNumber(cfg));
         go(S.QTY_CUSTOM);
         break;
       }
-      const fromButton = /^qty_\d+$/.test(incoming.buttonId ?? '') ? Number(incoming.buttonId.slice(4)) : null;
-      const qty = fromButton ?? Number.parseInt(text.match(/\d+/)?.[0] ?? '', 10);
+      let qty = /^qty_\d+$/.test(btn) ? Number(btn.slice(4)) : Number.parseInt(text.match(/\d+/)?.[0] ?? '', 10);
+      if (!qty && /pack/.test(norm(text)) && M.packQty(cfg)) qty = M.packQty(cfg);
       if (qty > cfg.maxQty) {
         // Wholesale: a person negotiates the price
         session.order.qty = qty;
@@ -140,35 +197,42 @@ export function handleCustomer(session, incoming, { config: cfg, store }) {
         reply(session.state === S.QTY ? M.askQty(cfg, true) : M.askQtyNumber(cfg, true));
         break;
       }
-      session.order.qty = qty;
-      const up = session.upsellShown ? null : nextUpgrade(qty, cfg);
-      if (up) {
-        session.upsellShown = true;
-        session.upsell = up;
-        reply(M.upsellOffer(qty, up, cfg));
-        go(S.UPSELL);
-      } else {
-        reply(M.askMethod(cfg, qty));
-        go(S.METHOD);
-      }
+      session.order = { kind: 'one-time', qty };
+      reply(M.askMethod(cfg, qty));
+      go(S.METHOD);
       break;
     }
 
-    case S.UPSELL: {
+    case S.SUB_FREQ: {
       const c = pick(incoming, {
-        up_yes: YES,
-        up_no: /^(no|solo|me quedo|asi esta bien|nada mas|mejor no)/,
+        sub_1: /(cada mes|mensual|1 mes|^1$)/,
+        sub_2: /(2 meses|dos meses|bimestral|^2$)/,
       });
-      if (c === 'up_yes') {
-        session.order.qty = session.upsell.qty;
-        session.order.upsold = true;
-        reply(M.askMethod(cfg, session.order.qty, M.upsellAcceptedIntro(session.order.qty)));
-        go(S.METHOD);
-      } else if (c === 'up_no') {
-        reply(M.askMethod(cfg, session.order.qty));
-        go(S.METHOD);
+      if (!c) {
+        reply(M.subOffer(cfg));
+        break;
+      }
+      session.order = { kind: 'subscription', months: c === 'sub_1' ? 1 : 2, qty: 1, method: 'delivery' };
+      reply(M.askName());
+      go(S.D_NAME);
+      break;
+    }
+
+    case S.SUB_CANCEL: {
+      const c = pick(incoming, { sub_cancel_yes: YES, sub_cancel_no: NO });
+      const current = activeSub(store, session.phone);
+      if (c === 'sub_cancel_yes' && current) {
+        current.status = 'cancelled';
+        current.cancelledAt = new Date().toISOString();
+        store.saveSubscription(current);
+        reply(M.subCancelled());
+        notifyOwner(M.ownerSubCancelled(current));
+        resetSession(session);
+      } else if (c === 'sub_cancel_no' || !current) {
+        reply(M.subKept());
+        resetSession(session);
       } else {
-        reply(M.upsellOffer(session.order.qty, session.upsell, cfg));
+        reply(M.askCancelSub(current));
       }
       break;
     }
@@ -203,7 +267,7 @@ export function handleCustomer(session, incoming, { config: cfg, store }) {
         reply(M.askCedula());
         go(S.D_ID);
       } else {
-        reply(M.summary(session.order, cfg));
+        showSummary();
         go(S.SUMMARY);
       }
       break;
@@ -238,39 +302,63 @@ export function handleCustomer(session, incoming, { config: cfg, store }) {
         break;
       }
       session.order.address = text;
-      reply(M.summary(session.order, cfg));
+      showSummary();
       go(S.SUMMARY);
       break;
     }
 
     case S.SUMMARY: {
-      const c = pick(incoming, {
-        confirm: YES,
-        add_more: /(agregar|anadir|sumar|llevar mas|mas cuadernos)/,
-        edit: /(corregir|cambiar|editar|no)/,
-      });
-      if (c === 'add_more' && shippingGap(session.order, cfg)) {
-        session.order.qty = cfg.freeShippingFrom;
-        session.order.upsold = true;
-        reply(M.summary(session.order, cfg, M.freeShippingUnlocked()));
-      } else if (c === 'confirm') {
-        const t = totals(session.order, cfg);
-        Object.assign(session.order, t, {
+      const c = pick(incoming, { confirm: YES, edit: /(corregir|cambiar|editar|no)/ });
+      if (c === 'confirm') {
+        const base = {
           id: session.order.id ?? newOrderId(),
           phone: session.phone,
           adId: session.adId,
           status: 'awaiting_payment',
           createdAt: new Date().toISOString(),
-        });
+        };
+        if (isSub()) {
+          const price = cfg.subscription.price;
+          const newSub = {
+            id: session.order.subId ?? newSubId(),
+            phone: session.phone,
+            name: session.order.name,
+            cedula: session.order.cedula,
+            city: session.order.city,
+            address: session.order.address,
+            months: session.order.months,
+            price,
+            status: 'pending_payment',
+            createdAt: base.createdAt,
+          };
+          store?.saveSubscription(newSub);
+          Object.assign(session.order, base, {
+            subId: newSub.id,
+            unit: price,
+            subtotal: price,
+            savings: 0,
+            shipping: 0,
+            total: price,
+          });
+        } else {
+          Object.assign(session.order, totals(session.order, cfg), base);
+        }
         store?.saveOrder(session.order);
         reply(M.askPayment(session.order));
         go(S.PAYMENT);
       } else if (c === 'edit') {
-        session.order = { qty: session.order.qty, upsold: session.order.upsold };
-        reply(M.askMethod(cfg, session.order.qty));
-        go(S.METHOD);
+        if (isSub()) {
+          const { kind, months } = session.order;
+          session.order = { kind, months, qty: 1, method: 'delivery' };
+          reply(M.askName());
+          go(S.D_NAME);
+        } else {
+          session.order = { kind: 'one-time', qty: session.order.qty };
+          reply(M.askMethod(cfg, session.order.qty));
+          go(S.METHOD);
+        }
       } else {
-        reply(M.summary(session.order, cfg));
+        showSummary();
       }
       break;
     }
@@ -331,7 +419,22 @@ export function handleCustomer(session, incoming, { config: cfg, store }) {
   return { session, out };
 }
 
-export const OWNER_COMMANDS = ['pagado', 'guia', 'bot', 'pedidos', 'responder', 'comandos'];
+/**
+ * Payment reminders for subscriptions whose next delivery is close.
+ * The server runs this every hour; `today` is 'YYYY-MM-DD' (Ecuador time).
+ */
+export function subscriptionReminders(today, { config: cfg, store }) {
+  const out = [];
+  for (const sub of dueForReminder(store.listSubscriptions(), today, cfg.subscription.reminderDaysBefore)) {
+    out.push({ to: sub.phone, msg: M.subReminder(sub, cfg) });
+    if (cfg.ownerPhone) out.push({ to: cfg.ownerPhone, msg: M.ownerSubReminderSent(sub) });
+    sub.remindedFor = sub.nextShipDate;
+    store.saveSubscription(sub);
+  }
+  return out;
+}
+
+export const OWNER_COMMANDS = ['pagado', 'guia', 'bot', 'pedidos', 'suscripciones', 'recordar', 'responder', 'comandos'];
 
 // Only messages that start with a command are treated as admin commands, so you
 // can still test the customer flow from your own phone.
@@ -339,14 +442,16 @@ export const isOwnerCommand = (text = '') => OWNER_COMMANDS.includes(norm(text.s
 
 /**
  * Commands you send from your own WhatsApp (OWNER_PHONE) to the bot's number:
- *   pagado AZ12345          -> marks paid and tells the customer
+ *   pagado AZ12345          -> marks paid and tells the customer (activates/renews subscriptions)
  *   guia AZ12345 LAAR123    -> sends the LAAR tracking number to the customer
- *   bot 593991234567        -> gives a chat back to the bot (after "asesor")
  *   pedidos                 -> lists orders waiting for verification
+ *   suscripciones           -> lists active subscriptions and next delivery dates
+ *   recordar SUB12345       -> sends the payment reminder for a subscription right now
  *   responder 5939... texto -> sends a message to a customer through the bot's number
+ *   bot 593991234567        -> gives a chat back to the bot (after "asesor")
  *   comandos                -> shows this list
  */
-export function handleOwner(text, { config: cfg, store }) {
+export function handleOwner(text, { config: cfg, store, today = todayEC() }) {
   const out = [];
   const toOwner = (msg) => out.push({ to: cfg.ownerPhone, msg });
   const [cmd, arg1, ...rest] = text.trim().split(/\s+/);
@@ -361,7 +466,20 @@ export function handleOwner(text, { config: cfg, store }) {
       order.status = 'paid';
       order.paidAt = new Date().toISOString();
       store.saveOrder(order);
-      out.push({ to: order.phone, msg: M.paymentConfirmed(order, cfg) });
+      const sub = order.subId && store.findSubscription(order.subId);
+      if (sub) {
+        if (order.renewal) {
+          sub.nextShipDate = addMonths(sub.nextShipDate, sub.months);
+        } else {
+          sub.status = 'active';
+          sub.nextShipDate = addMonths(today, sub.months);
+        }
+        sub.lastPaidOrder = order.id;
+        store.saveSubscription(sub);
+        out.push({ to: order.phone, msg: order.renewal ? M.subRenewed(sub, cfg) : M.subActivated(sub, cfg) });
+      } else {
+        out.push({ to: order.phone, msg: M.paymentConfirmed(order, cfg) });
+      }
       const session = store.getSession(order.phone);
       if (session) {
         resetSession(session, order.phone);
@@ -401,10 +519,28 @@ export function handleOwner(text, { config: cfg, store }) {
       toOwner(
         M.plain(
           pending.length
-            ? pending.map((o) => `${o.id} · ${o.name} · ${o.qty} cuad. · $${o.total.toFixed(2)} · ${o.paymentMethod}`).join('\n')
+            ? pending
+                .map((o) => `${o.id} · ${o.name} · ${o.subId ? 'suscripción' : `${o.qty} cuad.`} · $${o.total.toFixed(2)} · ${o.paymentMethod}`)
+                .join('\n')
             : 'No hay pagos por verificar 🙌'
         )
       );
+      break;
+    }
+    case 'suscripciones': {
+      toOwner(M.ownerSubList(store.listSubscriptions().filter((s) => s.status === 'active')));
+      break;
+    }
+    case 'recordar': {
+      const sub = store.findSubscription(arg1);
+      if (!sub || sub.status !== 'active') {
+        toOwner(M.plain('Uso: recordar <SUB…> (de una suscripción activa)'));
+        break;
+      }
+      sub.remindedFor = sub.nextShipDate;
+      store.saveSubscription(sub);
+      out.push({ to: sub.phone, msg: M.subReminder(sub, cfg) });
+      toOwner(M.ownerSubReminderSent(sub));
       break;
     }
     case 'responder': {

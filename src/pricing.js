@@ -1,6 +1,6 @@
 // Volume pricing: the more notebooks, the lower the price per notebook.
-// Tiers come from PRICE_TIERS, e.g. "1:15,2:13.5,3:12,5:11"
-//   -> 1 notebook $15 each, 2-4 notebooks $13.50... (each tier applies from its minimum)
+// Tiers come from PRICE_TIERS, e.g. "1:15,3:12"
+//   -> 1-2 notebooks $15 each, 3 or more $12 each (the 2nd tier is the "pack" the bot offers)
 
 export const round = (n) => Math.round(n * 100) / 100;
 
@@ -28,28 +28,3 @@ export function quote(qty, method, cfg) {
   const shipping = method === 'delivery' && !hasFreeShipping(qty, cfg) ? cfg.shippingCost : 0;
   return { qty, unit, subtotal, savings, shipping, total: round(subtotal + shipping) };
 }
-
-// Is taking ONE more notebook a clearly better deal? Used for the upsell offer.
-export function nextUpgrade(qty, cfg) {
-  const next = qty + 1;
-  if (next > cfg.maxQty) return null;
-  const betterPrice = unitPrice(next, cfg) < unitPrice(qty, cfg);
-  const unlocksShipping = hasFreeShipping(next, cfg) && !hasFreeShipping(qty, cfg);
-  if (!betterPrice && !unlocksShipping) return null;
-  const now = quote(qty, 'pickup', cfg);
-  const then = quote(next, 'pickup', cfg);
-  return {
-    qty: next,
-    unit: then.unit,
-    extra: round(then.subtotal - now.subtotal), // what the extra notebook really costs
-    savings: then.savings,
-    unlocksShipping,
-  };
-}
-
-// Notebooks missing to unlock free delivery, when it's close enough to suggest (1-2).
-export const shippingGap = (order, cfg) => {
-  if (order.method !== 'delivery' || !cfg.freeShippingFrom || hasFreeShipping(order.qty, cfg)) return 0;
-  const gap = cfg.freeShippingFrom - order.qty;
-  return gap <= 2 && cfg.freeShippingFrom <= cfg.maxQty ? gap : 0;
-};

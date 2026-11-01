@@ -7,19 +7,21 @@ Sales funnel for the **Cuaderno Azul**: Meta ad → WhatsApp → automatic chat 
 ```
  Instagram / Facebook ad          WhatsApp bot (this repo)                      You
  ───────────────────────          ─────────────────────────────────────────    ─────────────
- "Click to WhatsApp" ad   ──►  1. Photo + price: "¿Lo quieres?"  [Sí] [Pregunta]
- (pre-filled message:          2. ¿Cuántos? (list 1–20, prices + savings)  ☰ Elegir cantidad
-    🔥 "¡Espera! Llévate uno más por solo $9" [Sí] [No]
-  "¡Hola! Quiero el            3. ¿Envío o retiro?               [🚚 LAAR] [🏬 Tienda]
-   cuaderno 💙")                  🚚 nombre → cédula → ciudad → dirección
-                                  🏬 nombre (+ store address, map, hours, FREE)
+ "Click to WhatsApp" ad   ──►  1. Photo + price   [¡Lo quiero!] [📅 Suscripción] [Pregunta]
+ (pre-filled message:
+  "¡Hola! Quiero el            BUY                                 SUBSCRIBE
+   cuaderno azul 💙")          2. ¿Cuántos? [1] [⭐ Pack de 3] [Otra]   2. [Cada mes] [Cada 2 meses]
+                               3. ¿Envío o retiro?                   3. Delivery data (LAAR)
+                                  🚚 nombre → cédula → ciudad → dirección
+                                  🏬 nombre (+ store address, FREE)
                                4. Resumen + total                [✅ Confirmar] [✏️ Corregir]
                                5. ¿Cómo pagas?                   [⚡ DeUna] [🏦 Transferencia]
                                6. Customer sends receipt photo  ──────────────►  📲 receipt + order details
                                                                                   you reply "pagado AZ123"
                                7. "¡Pago confirmado!"  ◄──────────────────────────┘
-                                                                                  you ship with LAAR,
-                               8. "Tu guía LAAR es ..."  ◄────────────────────── reply "guia AZ123 <n°>"
+                               8. "Tu guía LAAR es ..."  ◄────────────────────── "guia AZ123 <n°>"
+
+ Subscriptions: 3 days before each delivery the bot sends a reminder → [Pagar envío] → steps 5–8 again.
 ```
 
 At any moment the customer can type **asesor** to talk to you (the bot goes quiet for that chat).
@@ -35,7 +37,8 @@ At any moment the customer can type **asesor** to talk to you (the bot goes quie
 | 4 | Put the bot online (WhatsApp Cloud API + this code) | 2–3 hours | [docs/02-whatsapp-bot.md](docs/02-whatsapp-bot.md) |
 | 5 | Launch the **Click-to-WhatsApp** ads | 1 hour | [docs/03-meta-ads.md](docs/03-meta-ads.md) |
 | 6 | Daily routine: verify payments, ship, send tracking | 15 min/day | [docs/06-operacion.md](docs/06-operacion.md) |
-| ⭐ | Upselling: volume prices, "one more" offer, free shipping threshold | 10 min | [docs/07-upselling.md](docs/07-upselling.md) |
+| ⭐ | Upselling: the "Pack de 3" option | 5 min | [docs/07-upselling.md](docs/07-upselling.md) |
+| 📅 | Subscription (1 notebook every 1 or 2 months) + create the WhatsApp reminder template | 15 min | [docs/08-suscripcion.md](docs/08-suscripcion.md) |
 
 > **Want to start selling this week, before the bot?** You can run steps 1–3 + 5 with the free
 > **WhatsApp Business app** and answer by hand using the same scripts (quick replies). See
@@ -71,7 +74,8 @@ Requires Node.js 18+ (no other dependencies).
 
 ```
 src/config.js      ← prices, shipping cost, store address, bank data (all from .env)
-src/pricing.js     ← volume prices, savings, free shipping, upsell math
+src/pricing.js     ← pack price, savings, free shipping
+src/subscriptions.js ← subscription dates and reminders
 src/messages.js    ← every text the bot sends (edit the wording here)
 src/flow.js        ← the conversation steps + your admin commands
 src/whatsapp.js    ← talks to the WhatsApp Cloud API
@@ -91,4 +95,6 @@ scripts/simulate.js← terminal simulator
 | `guia AZ1234 0012345` | sends the LAAR tracking number to the customer |
 | `responder 5939XXXXXXXX hola!` | writes to a customer from the business number |
 | `bot 5939XXXXXXXX` | gives a chat back to the bot after "asesor" |
+| `suscripciones` | lists active subscriptions and next delivery dates |
+| `recordar SUB1234` | sends a subscription's payment reminder now |
 | `comandos` | shows this list |
